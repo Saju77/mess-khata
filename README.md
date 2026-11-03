@@ -145,6 +145,12 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key
 
 ### Netlify (GitHub দিয়ে অটো ডিপ্লয়)
 
+**আগে Netlify Drop দিয়ে সাইট বানিয়ে থাকলে** নতুন সাইট না বানিয়ে পুরনো সাইটের URL-ই রাখতে পারেন:
+
+- Netlify → আপনার সাইট → **Project configuration → Build & deploy → Continuous deployment → Link repository** → GitHub → রিপো ও `main` ব্রাঞ্চ বেছে নিন।
+
+**নতুন সাইট বানাতে চাইলে:**
+
 1. [app.netlify.com](https://app.netlify.com) → **Add new project → Import an existing project** → **GitHub** → রিপো বেছে নিন।
 2. `netlify.toml` থেকে build command (`npm run build`) ও publish directory (`dist`) নিজেই ধরা পড়বে।
 3. **Project configuration → Environment variables**-এ দুটি env যোগ করুন:
