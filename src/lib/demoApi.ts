@@ -7,6 +7,9 @@ import {
 } from 'date-fns'
 import type { Api, SignUpResult } from './api'
 import type {
+  ActivityAction,
+  ActivityEntity,
+  ActivityLogEntry,
   Deposit,
   DepositInput,
   Expense,
@@ -38,6 +41,7 @@ interface DemoDb {
   meals: Meal[]
   expenses: Expense[]
   deposits: Deposit[]
+  activity: ActivityLogEntry[]
 }
 
 const BUYERS = [
@@ -186,6 +190,89 @@ function seedMonth(db: DemoDb, monthDate: Date, throughDay: number) {
   }
 }
 
+function seedActivity(db: DemoDb) {
+  const now = new Date()
+  const recent: { entity: 'expense' | 'deposit'; row: Expense | Deposit }[] = [
+    ...db.expenses.map((row) => ({ entity: 'expense' as const, row })),
+    ...db.deposits.map((row) => ({ entity: 'deposit' as const, row })),
+  ]
+  recent.sort(
+    (a, b) => b.row.date.localeCompare(a.row.date) || b.row.created_at.localeCompare(a.row.created_at),
+  )
+
+  const logs: ActivityLogEntry[] = []
+  for (const [index, item] of recent.slice(0, 16).entries()) {
+    const actorId =
+      item.entity === 'expense'
+        ? ((item.row as Expense).paid_by ?? (item.row as Expense).created_by)
+        : (item.row as Deposit).user_id
+    const actor = db.profiles.find((profile) => profile.id === actorId)
+    logs.push({
+      id: uid(),
+      mess_id: db.mess.id,
+      actor_id: actorId,
+      actor_name: actor?.full_name || 'সিস্টেম',
+      action: 'insert',
+      entity: item.entity,
+      entity_id: item.row.id,
+      data: { ...item.row } as unknown as Record<string, unknown>,
+      old_data: null,
+      created_at: new Date(now.getTime() - index * 37 * 60 * 1000).toISOString(),
+    })
+  }
+
+  // ডেমোতে একটা এডিটের উদাহরণ, যাতে ম্যানেজার কীভাবে বদল হয়েছে দেখতে পান
+  const latestExpense = recent.find((item) => item.entity === 'expense')?.row as Expense | undefined
+  if (latestExpense) {
+    logs.push({
+      id: uid(),
+      mess_id: db.mess.id,
+      actor_id: latestExpense.paid_by ?? DEMO_USER_ID,
+      actor_name:
+        db.profiles.find((profile) => profile.id === (latestExpense.paid_by ?? DEMO_USER_ID))?.full_name ||
+        'সিস্টেম',
+      action: 'update',
+      entity: 'expense',
+      entity_id: latestExpense.id,
+      data: { ...latestExpense } as unknown as Record<string, unknown>,
+      old_data: {
+        ...latestExpense,
+        amount: Math.max(1, latestExpense.amount - 250),
+      } as unknown as Record<string, unknown>,
+      created_at: new Date(now.getTime() - 8 * 60 * 1000).toISOString(),
+    })
+  }
+
+  // ডেমোতে একটা ডিলিটের উদাহরণ
+  const sampleMember = db.profiles[2]
+  if (sampleMember) {
+    const deleted: Deposit = {
+      id: uid(),
+      mess_id: db.mess.id,
+      user_id: sampleMember.id,
+      date: iso(now),
+      amount: 500,
+      note: 'ভুল করে দেওয়া এন্ট্রি (ডেমো)',
+      created_by: DEMO_USER_ID,
+      created_at: now.toISOString(),
+    }
+    logs.push({
+      id: uid(),
+      mess_id: db.mess.id,
+      actor_id: DEMO_USER_ID,
+      actor_name: db.profiles[0]?.full_name || 'সিস্টেম',
+      action: 'delete',
+      entity: 'deposit',
+      entity_id: deleted.id,
+      data: null,
+      old_data: { ...deleted } as unknown as Record<string, unknown>,
+      created_at: new Date(now.getTime() - 3 * 60 * 1000).toISOString(),
+    })
+  }
+
+  db.activity = logs.sort((a, b) => b.created_at.localeCompare(a.created_at))
+}
+
 function seedDb(): DemoDb {
   const now = new Date()
   const db: DemoDb = {
@@ -200,10 +287,12 @@ function seedDb(): DemoDb {
     meals: [],
     expenses: [],
     deposits: [],
+    activity: [],
   }
   const previous = subMonths(now, 1)
   seedMonth(db, previous, endOfMonth(previous).getDate())
   seedMonth(db, now, now.getDate())
+  seedActivity(db)
   return db
 }
 
@@ -217,6 +306,10 @@ function readDb(): DemoDb {
           ...expense,
           paid_by: expense.paid_by ?? expense.created_by ?? null,
         }))
+        if (!Array.isArray(parsed.activity)) {
+          seedActivity(parsed)
+          writeDb(parsed)
+        }
         return parsed
       }
     }
@@ -247,6 +340,30 @@ export function createDemoApi(): Api {
   function persist() {
     writeDb(db)
     notify()
+  }
+
+  function logActivity(draft: {
+    action: ActivityAction
+    entity: ActivityEntity
+    entity_id: string
+    data?: Record<string, unknown> | null
+    old_data?: Record<string, unknown> | null
+    actor_id?: string | null
+  }) {
+    const actorId = draft.actor_id === undefined ? DEMO_USER_ID : draft.actor_id
+    const actor = db.profiles.find((profile) => profile.id === actorId)
+    db.activity.unshift({
+      id: uid(),
+      mess_id: db.mess.id,
+      actor_id: actorId,
+      actor_name: actor?.full_name || 'সিস্টেম',
+      action: draft.action,
+      entity: draft.entity,
+      entity_id: draft.entity_id,
+      data: draft.data ?? null,
+      old_data: draft.old_data ?? null,
+      created_at: new Date().toISOString(),
+    })
   }
 
   function memberFor(userId: string): Member {
@@ -338,7 +455,15 @@ export function createDemoApi(): Api {
       const membership = db.members.find((item) => item.user_id === targetUserId)
       if (!membership) throw new Error('সদস্য পাওয়া যায়নি।')
       if (membership.role === 'manager') throw new Error('ম্যানেজারকে সরানো যায় না।')
+      const before = { ...membership }
       membership.left_at = iso(new Date())
+      logActivity({
+        action: 'update',
+        entity: 'member',
+        entity_id: targetUserId,
+        data: { ...membership } as unknown as Record<string, unknown>,
+        old_data: before as unknown as Record<string, unknown>,
+      })
       persist()
     },
 
@@ -349,9 +474,25 @@ export function createDemoApi(): Api {
       if (!currentManager) throw new Error('এই মেসে কোনো ম্যানেজার নেই।')
       const newManager = members.find((m) => m.user_id === newManagerUserId)
       if (!newManager || newManager.role === 'manager') throw new Error('নতুন ম্যানেজার এই মেসের সক্রিয় সদস্য নন।')
+      const oldRole = { ...currentManager }
+      const newRole = { ...newManager }
       currentManager.role = 'member'
       newManager.role = 'manager'
       db.mess = { ...db.mess, owner_id: newManagerUserId }
+      logActivity({
+        action: 'update',
+        entity: 'member',
+        entity_id: currentManager.user_id,
+        data: { ...currentManager } as unknown as Record<string, unknown>,
+        old_data: oldRole as unknown as Record<string, unknown>,
+      })
+      logActivity({
+        action: 'update',
+        entity: 'member',
+        entity_id: newManager.user_id,
+        data: { ...newManager } as unknown as Record<string, unknown>,
+        old_data: newRole as unknown as Record<string, unknown>,
+      })
       persist()
     },
 
@@ -371,13 +512,34 @@ export function createDemoApi(): Api {
           (meal) => meal.mess_id === messId && meal.user_id === entry.userId && meal.date === date,
         )
         if (Number(entry.count) <= 0) {
-          if (index >= 0) db.meals.splice(index, 1)
+          if (index >= 0) {
+            const [removed] = db.meals.splice(index, 1)
+            if (removed) {
+              logActivity({
+                action: 'delete',
+                entity: 'meal',
+                entity_id: removed.id,
+                old_data: { ...removed } as unknown as Record<string, unknown>,
+              })
+            }
+          }
           continue
         }
         if (index >= 0) {
-          db.meals[index] = { ...db.meals[index], count: Number(entry.count) }
+          const previous = db.meals[index]
+          if (Number(previous.count) !== Number(entry.count)) {
+            const next = { ...previous, count: Number(entry.count) }
+            db.meals[index] = next
+            logActivity({
+              action: 'update',
+              entity: 'meal',
+              entity_id: next.id,
+              data: { ...next } as unknown as Record<string, unknown>,
+              old_data: { ...previous } as unknown as Record<string, unknown>,
+            })
+          }
         } else {
-          db.meals.push({
+          const created: Meal = {
             id: uid(),
             mess_id: messId,
             user_id: entry.userId,
@@ -386,6 +548,13 @@ export function createDemoApi(): Api {
             note: null,
             created_by: DEMO_USER_ID,
             created_at: new Date().toISOString(),
+          }
+          db.meals.push(created)
+          logActivity({
+            action: 'insert',
+            entity: 'meal',
+            entity_id: created.id,
+            data: { ...created } as unknown as Record<string, unknown>,
           })
         }
       }
@@ -393,7 +562,7 @@ export function createDemoApi(): Api {
     },
 
     async addExpense(messId, input: ExpenseInput) {
-      db.expenses.push({
+      const created: Expense = {
         id: uid(),
         mess_id: messId,
         date: input.date,
@@ -405,6 +574,13 @@ export function createDemoApi(): Api {
         paid_by: input.paid_by || DEMO_USER_ID,
         created_by: DEMO_USER_ID,
         created_at: new Date().toISOString(),
+      }
+      db.expenses.push(created)
+      logActivity({
+        action: 'insert',
+        entity: 'expense',
+        entity_id: created.id,
+        data: { ...created } as unknown as Record<string, unknown>,
       })
       persist()
     },
@@ -412,6 +588,7 @@ export function createDemoApi(): Api {
     async updateExpense(id, messId, input) {
       const expense = db.expenses.find((item) => item.id === id && item.mess_id === messId)
       if (!expense) throw new Error('খরচ পাওয়া যায়নি।')
+      const before = { ...expense }
       Object.assign(expense, {
         date: input.date,
         amount: Number(input.amount),
@@ -421,16 +598,32 @@ export function createDemoApi(): Api {
         include_in_meal_rate: input.include_in_meal_rate,
         paid_by: input.paid_by || expense.paid_by || DEMO_USER_ID,
       })
+      logActivity({
+        action: 'update',
+        entity: 'expense',
+        entity_id: expense.id,
+        data: { ...expense } as unknown as Record<string, unknown>,
+        old_data: before as unknown as Record<string, unknown>,
+      })
       persist()
     },
 
     async deleteExpense(id, messId) {
+      const removed = db.expenses.find((item) => item.id === id && item.mess_id === messId)
       db.expenses = db.expenses.filter((item) => !(item.id === id && item.mess_id === messId))
+      if (removed) {
+        logActivity({
+          action: 'delete',
+          entity: 'expense',
+          entity_id: removed.id,
+          old_data: { ...removed } as unknown as Record<string, unknown>,
+        })
+      }
       persist()
     },
 
     async addDeposit(messId, input: DepositInput) {
-      db.deposits.push({
+      const created: Deposit = {
         id: uid(),
         mess_id: messId,
         user_id: input.user_id,
@@ -439,6 +632,13 @@ export function createDemoApi(): Api {
         note: input.note.trim() || null,
         created_by: DEMO_USER_ID,
         created_at: new Date().toISOString(),
+      }
+      db.deposits.push(created)
+      logActivity({
+        action: 'insert',
+        entity: 'deposit',
+        entity_id: created.id,
+        data: { ...created } as unknown as Record<string, unknown>,
       })
       persist()
     },
@@ -446,18 +646,41 @@ export function createDemoApi(): Api {
     async updateDeposit(id, messId, input) {
       const deposit = db.deposits.find((item) => item.id === id && item.mess_id === messId)
       if (!deposit) throw new Error('জমা পাওয়া যায়নি।')
+      const before = { ...deposit }
       Object.assign(deposit, {
         user_id: input.user_id,
         date: input.date,
         amount: Number(input.amount),
         note: input.note.trim() || null,
       })
+      logActivity({
+        action: 'update',
+        entity: 'deposit',
+        entity_id: deposit.id,
+        data: { ...deposit } as unknown as Record<string, unknown>,
+        old_data: before as unknown as Record<string, unknown>,
+      })
       persist()
     },
 
     async deleteDeposit(id, messId) {
+      const removed = db.deposits.find((item) => item.id === id && item.mess_id === messId)
       db.deposits = db.deposits.filter((item) => !(item.id === id && item.mess_id === messId))
+      if (removed) {
+        logActivity({
+          action: 'delete',
+          entity: 'deposit',
+          entity_id: removed.id,
+          old_data: { ...removed } as unknown as Record<string, unknown>,
+        })
+      }
       persist()
+    },
+
+    async listActivity(messId, limit = 100) {
+      db = readDb()
+      if (db.mess.id !== messId) return []
+      return [...db.activity].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit)
     },
 
     subscribe(_messId, onChange) {

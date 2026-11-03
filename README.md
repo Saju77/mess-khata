@@ -186,7 +186,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ### ১. লোকাল প্রজেক্ট Git-এ নিন
 
 ```powershell
-cd "C:\Users\Saju-Ahmed\Documents\Default Project"
+cd "C:\Users\Saju-Ahmed\Documents\Mess Khata Project"
 git init
 git add .
 git commit -m "Mess Khata: first commit"

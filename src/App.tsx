@@ -15,6 +15,7 @@ import { DepositsPage } from './pages/DepositsPage'
 import { OtherCostsPage } from './pages/OtherCostsPage'
 import { MembersPage } from './pages/MembersPage'
 import { SummaryPage } from './pages/SummaryPage'
+import { ActivityPage } from './pages/ActivityPage'
 import { SettingsPage } from './pages/SettingsPage'
 
 function BrandMark() {
@@ -74,6 +75,7 @@ function AppRoutes() {
         <Route path="other" element={<OtherCostsPage />} />
         <Route path="members" element={<MembersPage />} />
         <Route path="summary" element={<SummaryPage />} />
+        <Route path="activity" element={<ActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

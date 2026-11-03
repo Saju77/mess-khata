@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Calculator,
   ChevronDown,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -28,6 +29,7 @@ const NAV = [
   { to: '/other', label: 'অন্যান্য খরচ', icon: ReceiptText },
   { to: '/members', label: 'সদস্য', icon: Users },
   { to: '/summary', label: 'সারসংক্ষেপ', icon: Calculator },
+  { to: '/activity', label: 'অ্যাক্টিভিটি', icon: History },
   { to: '/settings', label: 'সেটিংস', icon: Settings },
 ]
 
@@ -96,9 +98,12 @@ function MessSwitcher({ dark = false }: { dark?: boolean }) {
 }
 
 function NavLinks({ onNavigate, dark = false }: { onNavigate?: () => void; dark?: boolean }) {
+  const { activeMess } = useApp()
+  const items =
+    activeMess?.role === 'manager' ? NAV : NAV.filter((item) => item.to !== '/activity')
   return (
     <nav className="space-y-1">
-      {NAV.map((item) => (
+      {items.map((item) => (
         <NavLink
           key={item.to}
           to={item.to}

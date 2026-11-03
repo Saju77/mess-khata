@@ -26,6 +26,7 @@ import {
 import { friendlyError } from '../lib/errors'
 import { monthRange } from '../lib/format'
 import type {
+  ActivityLogEntry,
   DepositInput,
   ExpenseInput,
   MealEntry,
@@ -51,6 +52,7 @@ interface AppContextValue {
   dataLoading: boolean
   error: string | null
   hasEnvConfig: boolean
+  refreshTick: number
 
   setMonth: (date: Date) => void
   setError: (message: string | null) => void
@@ -79,6 +81,7 @@ interface AppContextValue {
   addDeposit: (input: DepositInput) => Promise<void>
   updateDeposit: (id: string, input: DepositInput) => Promise<void>
   deleteDeposit: (id: string) => Promise<void>
+  loadActivity: (limit?: number) => Promise<ActivityLogEntry[]>
   resetDemo: () => Promise<void>
 }
 
@@ -462,6 +465,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [api, activeMessId, refresh],
   )
 
+  const loadActivity = useCallback(
+    async (limit = 100) => {
+      if (!api || !activeMessId) return []
+      return api.listActivity(activeMessId, limit)
+    },
+    [api, activeMessId],
+  )
+
   const resetDemo = useCallback(async () => {
     if (!api?.resetDemo) return
     await api.resetDemo()
@@ -486,6 +497,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dataLoading,
       error,
       hasEnvConfig,
+      refreshTick,
       setMonth,
       setError,
       refresh,
@@ -510,6 +522,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addDeposit,
       updateDeposit,
       deleteDeposit,
+      loadActivity,
       resetDemo,
     }),
     [
@@ -530,6 +543,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMonth,
       setError,
       refresh,
+      refreshTick,
       switchMess,
       signIn,
       signUp,
@@ -551,6 +565,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addDeposit,
       updateDeposit,
       deleteDeposit,
+      loadActivity,
       resetDemo,
     ],
   )

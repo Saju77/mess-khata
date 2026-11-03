@@ -131,6 +131,21 @@ create table if not exists public.deposits (
 );
 
 -- ------------------------------------------------------------
+-- 7. Activity log (কে কখন কী যোগ/এডিট/মুছেছে)
+-- ------------------------------------------------------------
+create table if not exists public.activity_log (
+  id uuid primary key default gen_random_uuid(),
+  mess_id uuid not null references public.messes(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  action text not null check (action in ('insert', 'update', 'delete')),
+  entity text not null check (entity in ('expense', 'deposit', 'meal', 'member')),
+  entity_id text not null default '',
+  data jsonb,
+  old_data jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- Indexes
 -- ------------------------------------------------------------
 create index if not exists meals_mess_date_idx on public.meals (mess_id, date);
@@ -139,6 +154,7 @@ create index if not exists expenses_mess_paid_idx on public.expenses (mess_id, p
 create index if not exists deposits_mess_date_idx on public.deposits (mess_id, date);
 create index if not exists mess_members_user_idx on public.mess_members (user_id);
 create index if not exists mess_members_mess_idx on public.mess_members (mess_id);
+create index if not exists activity_log_mess_created_idx on public.activity_log (mess_id, created_at desc);
 
 -- ------------------------------------------------------------
 -- Helper functions (RLS recursion এড়াতে security definer)
@@ -432,6 +448,90 @@ create trigger deposits_updated_at before update on public.deposits
 for each row execute function public.set_updated_at();
 
 -- ------------------------------------------------------------
+-- Activity log trigger
+-- প্রতিটি insert/update/delete স্বয়ংক্রিয়ভাবে activity_log-এ যাবে।
+-- ------------------------------------------------------------
+create or replace function public.log_row_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_action text;
+  v_entity text;
+  v_new jsonb;
+  v_old jsonb;
+  v_mess uuid;
+  v_entity_id text;
+  v_actor uuid := auth.uid();
+begin
+  v_entity := case tg_table_name
+    when 'expenses' then 'expense'
+    when 'deposits' then 'deposit'
+    when 'meals' then 'meal'
+    when 'mess_members' then 'member'
+    else tg_table_name
+  end;
+
+  if tg_op = 'INSERT' then
+    v_action := 'insert';
+    v_new := to_jsonb(new);
+    v_old := null;
+    v_mess := new.mess_id;
+    v_entity_id := coalesce(v_new->>'id', v_new->>'user_id', '');
+  elsif tg_op = 'UPDATE' then
+    v_new := to_jsonb(new);
+    v_old := to_jsonb(old);
+    -- শুধু updated_at বদলালে (আসল কিছু না বদলালে) লগ করব না
+    if (v_new - 'updated_at') = (v_old - 'updated_at') then
+      return new;
+    end if;
+    v_action := 'update';
+    v_mess := new.mess_id;
+    v_entity_id := coalesce(v_new->>'id', v_new->>'user_id', '');
+  else
+    v_action := 'delete';
+    v_new := null;
+    v_old := to_jsonb(old);
+    v_mess := old.mess_id;
+    v_entity_id := coalesce(v_old->>'id', v_old->>'user_id', '');
+  end if;
+
+  -- ০ মিলের নতুন এন্ট্রি লগ করার দরকার নেই
+  if v_entity = 'meal' and v_action = 'insert' and coalesce((v_new->>'count')::numeric, 0) = 0 then
+    return new;
+  end if;
+
+  begin
+    insert into public.activity_log (mess_id, actor_id, action, entity, entity_id, data, old_data)
+    values (v_mess, v_actor, v_action, v_entity, v_entity_id, v_new, v_old);
+  exception when foreign_key_violation then
+    -- মেস মুছে ফেলার সময় cascade delete-এ parent row না থাকলে লগ বাদ যাবে
+    null;
+  end;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists expenses_activity on public.expenses;
+create trigger expenses_activity after insert or update or delete on public.expenses
+for each row execute function public.log_row_activity();
+
+drop trigger if exists deposits_activity on public.deposits;
+create trigger deposits_activity after insert or update or delete on public.deposits
+for each row execute function public.log_row_activity();
+
+drop trigger if exists meals_activity on public.meals;
+create trigger meals_activity after insert or update or delete on public.meals
+for each row execute function public.log_row_activity();
+
+drop trigger if exists members_activity on public.mess_members;
+create trigger members_activity after insert or update or delete on public.mess_members
+for each row execute function public.log_row_activity();
+
+-- ------------------------------------------------------------
 -- Row Level Security
 -- ------------------------------------------------------------
 alter table public.profiles enable row level security;
@@ -440,6 +540,7 @@ alter table public.mess_members enable row level security;
 alter table public.meals enable row level security;
 alter table public.expenses enable row level security;
 alter table public.deposits enable row level security;
+alter table public.activity_log enable row level security;
 
 -- profiles
 drop policy if exists profiles_select on public.profiles;
@@ -559,6 +660,11 @@ drop policy if exists deposits_delete on public.deposits;
 create policy deposits_delete on public.deposits
 for delete using (public.is_mess_member(mess_id));
 
+-- activity_log — শুধু ম্যানেজার দেখতে পারবেন, কেউ সরাসরি লিখতে/মুছতে পারবে না
+drop policy if exists activity_log_select on public.activity_log;
+create policy activity_log_select on public.activity_log
+for select using (public.is_mess_manager(mess_id));
+
 -- ------------------------------------------------------------
 -- Grants (Supabase authenticated role)
 -- ------------------------------------------------------------
@@ -571,6 +677,9 @@ grant select, insert, update, delete on
   public.expenses,
   public.deposits
 to authenticated;
+
+-- activity log শুধু পড়া যাবে; লেখা/মোছা শুধু ট্রিগারের (security definer) মাধ্যমে
+grant select on public.activity_log to authenticated;
 
 grant execute on function public.is_mess_member(uuid) to authenticated;
 grant execute on function public.is_mess_manager(uuid) to authenticated;
@@ -615,6 +724,13 @@ begin
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'mess_members'
     ) then
       alter publication supabase_realtime add table public.mess_members;
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'activity_log'
+    ) then
+      alter publication supabase_realtime add table public.activity_log;
     end if;
   end if;
 end $$;

@@ -1,5 +1,6 @@
 import type { SupabaseConfig } from './config'
 import type {
+  ActivityLogEntry,
   Deposit,
   DepositInput,
   Expense,
@@ -46,6 +47,8 @@ export interface Api {
   addDeposit(messId: string, input: DepositInput): Promise<void>
   updateDeposit(id: string, messId: string, input: DepositInput): Promise<void>
   deleteDeposit(id: string, messId: string): Promise<void>
+
+  listActivity(messId: string, limit?: number): Promise<ActivityLogEntry[]>
 
   subscribe(messId: string, onChange: () => void): () => void
 

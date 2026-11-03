@@ -4,6 +4,7 @@ import type { Api, SignUpResult } from './api'
 import type { SupabaseConfig } from './config'
 import { createSupabaseClient } from './supabase'
 import type {
+  ActivityLogEntry,
   Deposit,
   Expense,
   ExpenseInput,
@@ -65,6 +66,22 @@ function normalizeExpense(row: Row): Expense {
 
 function normalizeDeposit(row: Row): Deposit {
   return { ...row, amount: Number(row.amount ?? 0) } as Deposit
+}
+
+function normalizeActivity(row: Row): ActivityLogEntry {
+  const actor = Array.isArray(row.actor) ? row.actor[0] : row.actor
+  return {
+    id: row.id,
+    mess_id: row.mess_id,
+    actor_id: row.actor_id ?? null,
+    actor_name: actor?.full_name || actor?.email || 'সিস্টেম',
+    action: row.action,
+    entity: row.entity,
+    entity_id: row.entity_id ?? '',
+    data: row.data ?? null,
+    old_data: row.old_data ?? null,
+    created_at: row.created_at,
+  }
 }
 
 export function createCloudApi(config: SupabaseConfig): Api {
@@ -283,6 +300,19 @@ export function createCloudApi(config: SupabaseConfig): Api {
       if (error) throw new Error(error.message)
     },
 
+    async listActivity(messId, limit = 100) {
+      const { data, error } = await client
+        .from('activity_log')
+        .select(
+          'id, mess_id, actor_id, action, entity, entity_id, data, old_data, created_at, actor:profiles!activity_log_actor_id_fkey(full_name, email)',
+        )
+        .eq('mess_id', messId)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      if (error) throw new Error(error.message)
+      return (data ?? []).map(normalizeActivity)
+    },
+
     subscribe(messId, onChange) {
       const channel = client
         .channel(`mess:${messId}`)
@@ -304,6 +334,11 @@ export function createCloudApi(config: SupabaseConfig): Api {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'mess_members', filter: `mess_id=eq.${messId}` },
+          onChange,
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'activity_log', filter: `mess_id=eq.${messId}` },
           onChange,
         )
         .subscribe()

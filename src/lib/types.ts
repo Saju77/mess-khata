@@ -124,3 +124,19 @@ export interface MonthSummary {
   activeMembers: Member[]
   rows: MonthSummaryRow[]
 }
+
+export type ActivityAction = 'insert' | 'update' | 'delete'
+export type ActivityEntity = 'expense' | 'deposit' | 'meal' | 'member'
+
+export interface ActivityLogEntry {
+  id: string
+  mess_id: string
+  actor_id: string | null
+  actor_name: string
+  action: ActivityAction
+  entity: ActivityEntity
+  entity_id: string
+  data: Record<string, unknown> | null
+  old_data: Record<string, unknown> | null
+  created_at: string
+}
