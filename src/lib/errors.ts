@@ -15,6 +15,8 @@ const MESSAGES: Record<string, string> = {
   'networkerror': 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না। সংযোগ চেক করে আবার চেষ্টা করুন।',
   'jwt expired': 'সেশনের সময় শেষ। আবার লগইন করুন।',
   'row-level security': 'এই তথ্যে আপনার অনুমতি নেই।',
+  "could not find the table 'public.activity_log'":
+    'ডেটাবেস আপডেট এখনো সম্পূর্ণ হয়নি। GitHub Actions-এ Supabase schema deploy সফল হয়েছে কিনা দেখুন।',
 }
 
 export function friendlyError(error: unknown): string {

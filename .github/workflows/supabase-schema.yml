@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check secret
         env:
@@ -28,12 +28,26 @@ jobs:
             exit 1
           fi
 
+      - name: Verify database connection
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: 15
+          PGSSLMODE: require
+        run: |
+          if ! psql "$SUPABASE_DB_URL" --no-password --no-psqlrc --command "select 1;"; then
+            echo "::error::Supabase DB connection failed. SUPABASE_DB_URL-এ Dashboard-এর Connect → Session pooler URI দিন; database password ও port 5432 ঠিক আছে কিনা দেখুন।"
+            exit 1
+          fi
+
       - name: Apply schema.sql
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: 15
+          PGSSLMODE: require
         run: |
           psql "$SUPABASE_DB_URL" \
             --set ON_ERROR_STOP=1 \
             --no-psqlrc \
+            --single-transaction \
             --file supabase/schema.sql
           echo "✅ Supabase schema applied."

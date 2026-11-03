@@ -214,7 +214,7 @@ Supabase Dashboard → **Project Settings → Database → Connection string →
 postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 ```
 
-> পাসওয়ার্ডে special character থাকলে URL-encode করুন। **Direct connection** নয় — IPv6 সমস্যার কারণে **Session pooler** ব্যবহার করুন।
+> `<password>` placeholder রেখে দেবেন না—সেখানে আসল **database password** বসাতে হবে। পাসওয়ার্ডে special character থাকলে URL-encode করুন। **Direct connection** (`db.<ref>.supabase.co`) নয়—GitHub runner-এর IPv6 সমস্যার কারণে **Session pooler**, user `postgres.<project-ref>` এবং port `5432` ব্যবহার করুন।
 
 ### ৪. GitHub Secrets যোগ করুন
 

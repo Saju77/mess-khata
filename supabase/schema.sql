@@ -759,3 +759,6 @@ begin
     end if;
   end if;
 end $$;
+
+-- PostgREST যেন নতুন table/column সঙ্গে সঙ্গে চিনতে পারে
+notify pgrst, 'reload schema';
