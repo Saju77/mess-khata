@@ -69,12 +69,11 @@ function normalizeDeposit(row: Row): Deposit {
 }
 
 function normalizeActivity(row: Row): ActivityLogEntry {
-  const actor = Array.isArray(row.actor) ? row.actor[0] : row.actor
   return {
     id: row.id,
     mess_id: row.mess_id,
     actor_id: row.actor_id ?? null,
-    actor_name: actor?.full_name || actor?.email || 'সিস্টেম',
+    actor_name: row.actor_name || 'সিস্টেম',
     action: row.action,
     entity: row.entity,
     entity_id: row.entity_id ?? '',
@@ -274,10 +273,11 @@ export function createCloudApi(config: SupabaseConfig): Api {
       const uid = await userId()
       const { error } = await client.from('deposits').insert({
         mess_id: messId,
-        user_id: uid,
+        user_id: input.user_id,
         date: input.date,
         amount: Number(input.amount),
         note: input.note,
+        created_by: uid,
       })
       if (error) throw new Error(error.message)
     },
@@ -286,6 +286,7 @@ export function createCloudApi(config: SupabaseConfig): Api {
       const { error } = await client
         .from('deposits')
         .update({
+          user_id: input.user_id,
           date: input.date,
           amount: Number(input.amount),
           note: input.note,
@@ -300,15 +301,15 @@ export function createCloudApi(config: SupabaseConfig): Api {
       if (error) throw new Error(error.message)
     },
 
-    async listActivity(messId, limit = 100) {
+    async listActivity(messId, limit = 100, offset = 0) {
       const { data, error } = await client
         .from('activity_log')
         .select(
-          'id, mess_id, actor_id, action, entity, entity_id, data, old_data, created_at, actor:profiles!activity_log_actor_id_fkey(full_name, email)',
+          'id, mess_id, actor_id, actor_name, action, entity, entity_id, data, old_data, created_at',
         )
         .eq('mess_id', messId)
         .order('created_at', { ascending: false })
-        .limit(limit)
+        .range(offset, offset + limit - 1)
       if (error) throw new Error(error.message)
       return (data ?? []).map(normalizeActivity)
     },

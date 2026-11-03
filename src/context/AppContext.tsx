@@ -81,7 +81,7 @@ interface AppContextValue {
   addDeposit: (input: DepositInput) => Promise<void>
   updateDeposit: (id: string, input: DepositInput) => Promise<void>
   deleteDeposit: (id: string) => Promise<void>
-  loadActivity: (limit?: number) => Promise<ActivityLogEntry[]>
+  loadActivity: (limit?: number, offset?: number) => Promise<ActivityLogEntry[]>
   resetDemo: () => Promise<void>
 }
 
@@ -466,9 +466,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const loadActivity = useCallback(
-    async (limit = 100) => {
+    async (limit = 100, offset = 0) => {
       if (!api || !activeMessId) return []
-      return api.listActivity(activeMessId, limit)
+      return api.listActivity(activeMessId, limit, offset)
     },
     [api, activeMessId],
   )

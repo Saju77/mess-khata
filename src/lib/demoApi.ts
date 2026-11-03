@@ -677,10 +677,16 @@ export function createDemoApi(): Api {
       persist()
     },
 
-    async listActivity(messId, limit = 100) {
+    async listActivity(messId, limit = 100, offset = 0) {
       db = readDb()
       if (db.mess.id !== messId) return []
-      return [...db.activity].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit)
+      const me = db.members.find((member) => member.user_id === DEMO_USER_ID)
+      if (me?.role !== 'manager' || me.left_at) {
+        throw new Error('শুধু ম্যানেজার অ্যাক্টিভিটি ইতিহাস দেখতে পারবেন।')
+      }
+      return [...db.activity]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(offset, offset + limit)
     },
 
     subscribe(_messId, onChange) {

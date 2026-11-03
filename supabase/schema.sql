@@ -137,6 +137,7 @@ create table if not exists public.activity_log (
   id uuid primary key default gen_random_uuid(),
   mess_id uuid not null references public.messes(id) on delete cascade,
   actor_id uuid references public.profiles(id) on delete set null,
+  actor_name text not null default '',
   action text not null check (action in ('insert', 'update', 'delete')),
   entity text not null check (entity in ('expense', 'deposit', 'meal', 'member')),
   entity_id text not null default '',
@@ -144,6 +145,15 @@ create table if not exists public.activity_log (
   old_data jsonb,
   created_at timestamptz not null default now()
 );
+
+-- আগের schema-তে activity_log তৈরি হয়ে থাকলে নামের snapshot কলাম যোগ হবে
+alter table public.activity_log
+  add column if not exists actor_name text not null default '';
+
+update public.activity_log log
+set actor_name = coalesce(nullif(profile.full_name, ''), profile.email, 'সিস্টেম')
+from public.profiles profile
+where log.actor_id = profile.id and log.actor_name = '';
 
 -- ------------------------------------------------------------
 -- Indexes
@@ -430,6 +440,8 @@ returns trigger
 language plpgsql
 as $$
 begin
+  -- যিনি প্রথম এন্ট্রি করেছেন তাঁর পরিচয় edit-এর সময় বদলানো যাবে না
+  new.created_by = old.created_by;
   new.updated_at = now();
   return new;
 end;
@@ -465,7 +477,15 @@ declare
   v_mess uuid;
   v_entity_id text;
   v_actor uuid := auth.uid();
+  v_actor_name text := 'সিস্টেম';
 begin
+  select coalesce(nullif(full_name, ''), email, 'সিস্টেম')
+  into v_actor_name
+  from public.profiles
+  where id = v_actor;
+
+  v_actor_name := coalesce(v_actor_name, 'সিস্টেম');
+
   v_entity := case tg_table_name
     when 'expenses' then 'expense'
     when 'deposits' then 'deposit'
@@ -483,8 +503,8 @@ begin
   elsif tg_op = 'UPDATE' then
     v_new := to_jsonb(new);
     v_old := to_jsonb(old);
-    -- শুধু updated_at বদলালে (আসল কিছু না বদলালে) লগ করব না
-    if (v_new - 'updated_at') = (v_old - 'updated_at') then
+    -- শুধু metadata বদলালে (আসল হিসাব না বদলালে) লগ করব না
+    if (v_new - 'updated_at' - 'created_by') = (v_old - 'updated_at' - 'created_by') then
       return new;
     end if;
     v_action := 'update';
@@ -504,8 +524,12 @@ begin
   end if;
 
   begin
-    insert into public.activity_log (mess_id, actor_id, action, entity, entity_id, data, old_data)
-    values (v_mess, v_actor, v_action, v_entity, v_entity_id, v_new, v_old);
+    insert into public.activity_log (
+      mess_id, actor_id, actor_name, action, entity, entity_id, data, old_data
+    )
+    values (
+      v_mess, v_actor, v_actor_name, v_action, v_entity, v_entity_id, v_new, v_old
+    );
   exception when foreign_key_violation then
     -- মেস মুছে ফেলার সময় cascade delete-এ parent row না থাকলে লগ বাদ যাবে
     null;
@@ -679,6 +703,7 @@ grant select, insert, update, delete on
 to authenticated;
 
 -- activity log শুধু পড়া যাবে; লেখা/মোছা শুধু ট্রিগারের (security definer) মাধ্যমে
+revoke insert, update, delete, truncate on public.activity_log from anon, authenticated;
 grant select on public.activity_log to authenticated;
 
 grant execute on function public.is_mess_member(uuid) to authenticated;

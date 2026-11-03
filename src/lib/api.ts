@@ -48,7 +48,7 @@ export interface Api {
   updateDeposit(id: string, messId: string, input: DepositInput): Promise<void>
   deleteDeposit(id: string, messId: string): Promise<void>
 
-  listActivity(messId: string, limit?: number): Promise<ActivityLogEntry[]>
+  listActivity(messId: string, limit?: number, offset?: number): Promise<ActivityLogEntry[]>
 
   subscribe(messId: string, onChange: () => void): () => void
 

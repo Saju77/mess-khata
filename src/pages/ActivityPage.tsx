@@ -22,6 +22,7 @@ import type { ActivityEntity, ActivityLogEntry } from '../lib/types'
 import { Avatar, Badge, Button, EmptyState, PageHeader, Skeleton, cn } from '../components/ui'
 
 type Filter = 'all' | ActivityEntity
+const PAGE_SIZE = 100
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'সব' },
@@ -342,6 +343,8 @@ export function ActivityPage() {
   const isManager = activeMess?.role === 'manager'
   const [items, setItems] = useState<ActivityLogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
 
   const nameById = useMemo(() => {
@@ -357,12 +360,15 @@ export function ActivityPage() {
     async (quiet = false) => {
       if (!isManager) {
         setItems([])
+        setHasMore(false)
         setLoading(false)
         return
       }
       if (!quiet) setLoading(true)
       try {
-        setItems(await loadActivity(150))
+        const rows = await loadActivity(PAGE_SIZE, 0)
+        setItems(rows)
+        setHasMore(rows.length === PAGE_SIZE)
       } catch (err) {
         toast.error(friendlyError(err))
       } finally {
@@ -371,6 +377,22 @@ export function ActivityPage() {
     },
     [isManager, loadActivity],
   )
+
+  const loadMore = async () => {
+    setLoadingMore(true)
+    try {
+      const rows = await loadActivity(PAGE_SIZE, items.length)
+      setItems((current) => {
+        const known = new Set(current.map((item) => item.id))
+        return [...current, ...rows.filter((item) => !known.has(item.id))]
+      })
+      setHasMore(rows.length === PAGE_SIZE)
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   useEffect(() => {
     void reload(true)
@@ -459,6 +481,14 @@ export function ActivityPage() {
           ))}
         </div>
       )}
+
+      {hasMore ? (
+        <div className="mt-5 flex justify-center">
+          <Button variant="secondary" loading={loadingMore} onClick={() => void loadMore()}>
+            আরও পুরনো রেকর্ড দেখুন
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }
