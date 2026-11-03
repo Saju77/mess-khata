@@ -1,0 +1,296 @@
+import { useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { isSameMonth } from 'date-fns'
+import {
+  ArrowRight,
+  Calculator,
+  CalendarDays,
+  ReceiptText,
+  ShoppingBasket,
+  UtensilsCrossed,
+  Wallet,
+} from 'lucide-react'
+import { useApp } from '../context/AppContext'
+import { balanceTone, calculateMonth, memberName, totalMealsForDate } from '../lib/calc'
+import {
+  formatDate,
+  formatMeals,
+  formatMoney,
+  formatMonth,
+  todayISO,
+} from '../lib/format'
+import { Avatar, Badge, Button, EmptyState, MonthPicker, PageHeader, SectionTitle, StatCard } from '../components/ui'
+
+export function DashboardPage() {
+  const { activeMess, members, month, monthData, dataLoading, user } = useApp()
+  const navigate = useNavigate()
+
+  const currency = activeMess?.mess.currency || '৳'
+  const start = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`
+  const endDate = new Date(month.getFullYear(), month.getMonth() + 1, 0)
+  const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
+
+  const summary = useMemo(
+    () => calculateMonth(members, monthData.meals, monthData.expenses, monthData.deposits, start, end),
+    [members, monthData, start, end],
+  )
+
+  const currentMonth = isSameMonth(month, new Date())
+  const todayMeals = totalMealsForDate(monthData.meals, todayISO())
+  const eatingToday = monthData.meals.filter((meal) => meal.date === todayISO() && meal.count > 0).length
+
+  const recent = useMemo(() => {
+    const expenses = monthData.expenses.map((expense) => {
+      const payer = members.find((item) => item.user_id === (expense.paid_by ?? expense.created_by))
+      return {
+        type: 'expense' as const,
+        id: expense.id,
+        date: expense.date,
+        createdAt: expense.created_at,
+        title: expense.description || (expense.kind === 'bazar' ? 'বাজার' : 'অন্যান্য খরচ'),
+        amount: expense.amount,
+        kind: expense.kind,
+        byName: payer ? memberName(payer) : null,
+      }
+    })
+    const deposits = monthData.deposits.map((deposit) => {
+      const member = members.find((item) => item.user_id === deposit.user_id)
+      return {
+        type: 'deposit' as const,
+        id: deposit.id,
+        date: deposit.date,
+        createdAt: deposit.created_at,
+        title: `${member ? memberName(member) : 'সদস্য'} — জমা`,
+        amount: deposit.amount,
+        kind: 'deposit' as const,
+        byName: null,
+      }
+    })
+    return [...expenses, ...deposits]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 6)
+  }, [monthData.expenses, monthData.deposits, members])
+
+  const hasData =
+    monthData.meals.length > 0 || monthData.expenses.length > 0 || monthData.deposits.length > 0
+
+  const sortedRows = useMemo(
+    () => [...summary.rows].sort((a, b) => a.balance - b.balance),
+    [summary.rows],
+  )
+
+  const greeting = (() => {
+    const hour = new Date().getHours()
+    if (hour < 12) return 'শুভ সকাল'
+    if (hour < 17) return 'শুভ অপরাহ্ন'
+    if (hour < 20) return 'শুভ সন্ধ্যা'
+    return 'শুভ রাত্রি'
+  })()
+
+  return (
+    <div className="animate-fade-up">
+      <PageHeader
+        title="ড্যাশবোর্ড"
+        subtitle={`${greeting}${user ? `, ${user.name.split(' ')[0]}` : ''} — ${formatMonth(month)}-এর হিসাব এক নজরে।`}
+        actions={<MonthPicker />}
+      />
+
+      {!hasData && !dataLoading ? (
+        <div className="card">
+          <EmptyState
+            icon={UtensilsCrossed}
+            title="এই মাসে এখনো কোনো এন্ট্রি নেই"
+            description="শুরু করতে আজকের মিল লিখুন, অথবা প্রথম বাজারের খরচ যোগ করুন।"
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button icon={UtensilsCrossed} onClick={() => navigate('/meals')}>
+                  মিল লিখুন
+                </Button>
+                <Button variant="secondary" icon={ShoppingBasket} onClick={() => navigate('/bazar')}>
+                  বাজার যোগ করুন
+                </Button>
+              </div>
+            }
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatCard
+              label="মোট মিল"
+              value={formatMeals(summary.totalMeals)}
+              hint={`${summary.activeMembers.length} জন সদস্য`}
+              icon={UtensilsCrossed}
+              tone="teal"
+            />
+            <StatCard
+              label="মোট বাজার"
+              value={formatMoney(summary.bazarTotal, currency)}
+              hint={summary.otherTotal > 0 ? `অন্যান্য ${formatMoney(summary.otherTotal, currency)}` : 'এই মাসে'}
+              icon={ShoppingBasket}
+              tone="amber"
+            />
+            <StatCard
+              label="মিল রেট"
+              value={formatMoney(summary.mealRate, currency)}
+              hint="প্রতি মিল"
+              icon={Calculator}
+              tone="violet"
+            />
+            <StatCard
+              label="মেস ফান্ড"
+              value={formatMoney(summary.fundBalance, currency)}
+              hint={`জমা ${formatMoney(summary.totalDeposits, currency)}`}
+              icon={Wallet}
+              tone={summary.fundBalance < 0 ? 'rose' : 'emerald'}
+            />
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            <section className="card lg:col-span-2">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900">সদস্যদের ব্যালেন্স</h2>
+                  <p className="mt-0.5 text-xs text-slate-500">জমা − (মিল খরচ + অন্যান্য ভাগ)</p>
+                </div>
+                <Link
+                  to="/summary"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:underline"
+                >
+                  বিস্তারিত <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+
+              {sortedRows.length === 0 ? (
+                <EmptyState icon={Wallet} title="কোনো সদস্য নেই" description="মেসে সদস্য যোগ হলে তাদের ব্যালেন্স এখানে দেখা যাবে।" />
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {sortedRows.map((row) => {
+                    const tone = balanceTone(row.balance)
+                    return (
+                      <div key={row.member.user_id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                        <Avatar name={memberName(row.member)} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="truncate text-sm font-semibold text-slate-800">{memberName(row.member)}</p>
+                            {row.member.role === 'manager' ? <Badge tone="teal">ম্যানেজার</Badge> : null}
+                          </div>
+                          <p className="num mt-0.5 text-[11px] text-slate-500">
+                            {formatMeals(row.meals)} মিল · বিল {formatMoney(row.totalBill, currency)} · জমা {formatMoney(row.deposit, currency)}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p
+                            className={`num text-sm font-bold ${
+                              tone === 'due' ? 'text-rose-600' : tone === 'advance' ? 'text-emerald-600' : 'text-slate-500'
+                            }`}
+                          >
+                            {tone === 'settled' ? 'সমান' : formatMoney(Math.abs(row.balance), currency)}
+                          </p>
+                          <p className="text-[10px] font-medium text-slate-400">
+                            {tone === 'due' ? 'দিতে হবে' : tone === 'advance' ? 'পাওনা' : ''}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            <div className="space-y-4">
+              <section className="card overflow-hidden">
+                <div className="bg-gradient-to-br from-teal-700 to-teal-900 px-5 py-4 text-white">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-teal-100/80">
+                      {currentMonth ? 'আজকের মিল' : 'এই মাসের মিল'}
+                    </p>
+                    <CalendarDays className="h-4 w-4 text-teal-200/70" />
+                  </div>
+                  <p className="num mt-2 text-3xl font-bold">{formatMeals(currentMonth ? todayMeals : summary.totalMeals)}</p>
+                  <p className="mt-1 text-xs text-teal-100/70">
+                    {currentMonth ? `${eatingToday} জন আজ খাচ্ছেন` : `${summary.activeMembers.length} জন সদস্য`}
+                  </p>
+                </div>
+                <div className="p-4">
+                  <Button variant="soft" size="sm" className="w-full" icon={UtensilsCrossed} onClick={() => navigate('/meals')}>
+                    মিল এডিট করুন
+                  </Button>
+                </div>
+              </section>
+
+              <section className="card p-4">
+                <SectionTitle title="দ্রুত এন্ট্রি" />
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'মিল', icon: UtensilsCrossed, to: '/meals', tone: 'bg-teal-50 text-teal-700' },
+                    { label: 'বাজার', icon: ShoppingBasket, to: '/bazar', tone: 'bg-amber-50 text-amber-700' },
+                    { label: 'জমা', icon: Wallet, to: '/deposits', tone: 'bg-emerald-50 text-emerald-700' },
+                  ].map((item) => (
+                    <Link
+                      key={item.label}
+                      to={item.to}
+                      className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-100 bg-slate-50/60 px-2 py-3 text-xs font-semibold text-slate-600 transition hover:-translate-y-0.5 hover:border-slate-200 hover:bg-white hover:shadow-sm"
+                    >
+                      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${item.tone}`}>
+                        <item.icon className="h-4 w-4" />
+                      </span>
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <section className="card mt-4">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">সাম্প্রতিক খরচ ও জমা</h2>
+                <p className="mt-0.5 text-xs text-slate-500">{formatMonth(month)}-এর সর্বশেষ এন্ট্রি</p>
+              </div>
+              <Link to="/bazar" className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:underline">
+                সব দেখুন <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {recent.length === 0 ? (
+              <EmptyState icon={ReceiptText} title="এখনো কোনো খরচ বা জমা নেই" />
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {recent.map((item) => (
+                  <div key={`${item.type}-${item.id}`} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                    <span
+                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                        item.type === 'deposit' ? 'bg-emerald-50 text-emerald-700' : item.kind === 'bazar' ? 'bg-amber-50 text-amber-700' : 'bg-sky-50 text-sky-700'
+                      }`}
+                    >
+                      {item.type === 'deposit' ? <Wallet className="h-4 w-4" /> : item.kind === 'bazar' ? <ShoppingBasket className="h-4 w-4" /> : <ReceiptText className="h-4 w-4" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {formatDate(item.date, true)}
+                        {item.byName ? ` · ${item.byName}` : ''}
+                      </p>
+                    </div>
+                    <p className={`num shrink-0 text-sm font-semibold ${item.type === 'deposit' ? 'text-emerald-600' : 'text-slate-700'}`}>
+                      {item.type === 'deposit' ? '+' : '−'}
+                      {formatMoney(item.amount, currency)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {dataLoading ? (
+        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500" /> ডেটা লোড হচ্ছে...
+        </div>
+      ) : null}
+    </div>
+  )
+}

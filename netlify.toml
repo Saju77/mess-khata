@@ -1,0 +1,23 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# React Router (client-side routing) — যেকোনো URL সরাসরি খুললেও index.html লোড হবে
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# PWA service worker সবসময় নতুন version নেবে
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

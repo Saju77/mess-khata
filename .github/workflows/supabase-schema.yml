@@ -1,0 +1,39 @@
+name: Deploy Supabase schema
+
+# main ব্রাঞ্চে push করলেই ডেটাবেসের schema (supabase/schema.sql) apply হবে।
+# schema.sql idempotent — বারবার চালালেও ডেটা নষ্ট হয় না, শুধু নতুন change যোগ হয়।
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-schema
+  cancel-in-progress: false
+
+jobs:
+  apply-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check secret
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL secret সেট করা নেই। GitHub → Settings → Secrets and variables → Actions এ যোগ করুন।"
+            exit 1
+          fi
+
+      - name: Apply schema.sql
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" \
+            --set ON_ERROR_STOP=1 \
+            --no-psqlrc \
+            --file supabase/schema.sql
+          echo "✅ Supabase schema applied."

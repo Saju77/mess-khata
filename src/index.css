@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Hind Siliguri", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-num: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-ink-50: #f6f7f4;
+  --color-ink-900: #14211f;
+  --color-brand-50: #effcf9;
+  --color-brand-100: #d3f6ee;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+}
+
+@layer base {
+  * {
+    @apply border-slate-200;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-[#f6f7f4] font-sans text-slate-800 antialiased;
+    background-image:
+      radial-gradient(1200px 500px at 100% -10%, rgba(20, 184, 166, 0.08), transparent 60%),
+      radial-gradient(900px 400px at -10% 10%, rgba(251, 191, 36, 0.06), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3, h4 {
+    @apply text-slate-900;
+    text-wrap: balance;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  ::selection {
+    background: #99f6e4;
+    color: #134e4a;
+  }
+
+  :focus-visible {
+    outline: 2px solid #0d9488;
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-family: var(--font-num);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .card {
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.14)];
+  }
+
+  .card-hover {
+    @apply transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-18px_rgba(15,23,42,0.28)];
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 999px;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.97); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.35s ease both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease both;
+}
+
+.animate-pop-in {
+  animation: pop-in 0.2s ease both;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: white !important;
+    background-image: none !important;
+    font-size: 11px;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-area {
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .print-area .card {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+}
