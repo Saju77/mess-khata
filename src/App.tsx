@@ -11,6 +11,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { MealsPage } from './pages/MealsPage'
+import { MealReportPage } from './pages/MealReportPage'
 import { BazarPage } from './pages/BazarPage'
 import { DepositsPage } from './pages/DepositsPage'
 import { OtherCostsPage } from './pages/OtherCostsPage'
@@ -77,6 +78,7 @@ function AppRoutes() {
       <Route element={<AppShell />}>
         <Route index element={<DashboardPage />} />
         <Route path="meals" element={<MealsPage />} />
+        <Route path="meal-report" element={<MealReportPage />} />
         <Route path="bazar" element={<BazarPage />} />
         <Route path="deposits" element={<DepositsPage />} />
         <Route path="other" element={<OtherCostsPage />} />

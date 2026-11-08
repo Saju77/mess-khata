@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { CalendarDays, Check, Minus, Plus, RotateCcw, UtensilsCrossed, Users } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { CalendarDays, Check, Minus, Plus, RotateCcw, TableProperties, UtensilsCrossed, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
 import { calculateMonth, memberName } from '../lib/calc'
@@ -22,8 +22,14 @@ function dateInSelectedMonth(dateIso: string, month: Date): boolean {
 
 export function MealsPage() {
   const { activeMess, members, month, monthData, saveMeals, setMonth } = useApp()
+  const [searchParams] = useSearchParams()
   const currency = activeMess?.mess.currency || '৳'
-  const [selectedDate, setSelectedDate] = useState(() => defaultDateForMonth(month))
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const requestedDate = searchParams.get('date')
+    return requestedDate && dateInSelectedMonth(requestedDate, month)
+      ? requestedDate
+      : defaultDateForMonth(month)
+  })
   const [counts, setCounts] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
@@ -116,7 +122,16 @@ export function MealsPage() {
       <PageHeader
         title="মিল"
         subtitle="একদিনের সব সদস্যের মিল একসাথে লিখে সেভ করুন।"
-        actions={<MonthPicker />}
+        actions={
+          <>
+            <MonthPicker />
+            {activeMess?.role === 'manager' ? (
+              <Link to="/meal-report">
+                <Button variant="secondary" icon={TableProperties}>মাসিক রিপোর্ট</Button>
+              </Link>
+            ) : null}
+          </>
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Calculator,
+  CalendarRange,
   ChevronDown,
   History,
   LayoutDashboard,
@@ -24,6 +25,7 @@ import { Avatar, Badge, Button, ConfirmDialog, Modal, cn } from './ui'
 const NAV = [
   { to: '/', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, end: true },
   { to: '/meals', label: 'মিল', icon: UtensilsCrossed },
+  { to: '/meal-report', label: 'মিল রিপোর্ট', icon: CalendarRange },
   { to: '/bazar', label: 'বাজার', icon: ShoppingBasket },
   { to: '/deposits', label: 'জমা', icon: Wallet },
   { to: '/other', label: 'অন্যান্য খরচ', icon: ReceiptText },
@@ -33,7 +35,9 @@ const NAV = [
   { to: '/settings', label: 'সেটিংস', icon: Settings },
 ]
 
-const MOBILE_NAV = [NAV[0], NAV[1], NAV[2], NAV[3], NAV[6]]
+const MANAGER_ONLY_PATHS = new Set(['/meal-report', '/activity'])
+const MOBILE_PATHS = new Set(['/', '/meals', '/bazar', '/deposits', '/summary'])
+const MOBILE_NAV = NAV.filter((item) => MOBILE_PATHS.has(item.to))
 
 function Logo({ dark = false }: { dark?: boolean }) {
   return (
@@ -100,7 +104,7 @@ function MessSwitcher({ dark = false }: { dark?: boolean }) {
 function NavLinks({ onNavigate, dark = false }: { onNavigate?: () => void; dark?: boolean }) {
   const { activeMess } = useApp()
   const items =
-    activeMess?.role === 'manager' ? NAV : NAV.filter((item) => item.to !== '/activity')
+    activeMess?.role === 'manager' ? NAV : NAV.filter((item) => !MANAGER_ONLY_PATHS.has(item.to))
   return (
     <nav className="space-y-1">
       {items.map((item) => (
