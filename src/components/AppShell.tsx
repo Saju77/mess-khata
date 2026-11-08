@@ -35,7 +35,7 @@ const NAV = [
   { to: '/settings', label: 'সেটিংস', icon: Settings },
 ]
 
-const MANAGER_ONLY_PATHS = new Set(['/meal-report', '/activity'])
+const MANAGER_ONLY_PATHS = new Set(['/activity'])
 const MOBILE_PATHS = new Set(['/', '/meals', '/bazar', '/deposits', '/summary'])
 const MOBILE_NAV = NAV.filter((item) => MOBILE_PATHS.has(item.to))
 

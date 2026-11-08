@@ -659,7 +659,7 @@ drop policy if exists expenses_delete on public.expenses;
 create policy expenses_delete on public.expenses
 for delete using (public.is_mess_member(mess_id));
 
--- deposits
+-- deposits — সবাই দেখতে পারবেন; যোগ/এডিট/ডিলিট শুধু ম্যানেজার
 drop policy if exists deposits_select on public.deposits;
 create policy deposits_select on public.deposits
 for select using (public.is_mess_member(mess_id));
@@ -667,22 +667,22 @@ for select using (public.is_mess_member(mess_id));
 drop policy if exists deposits_insert on public.deposits;
 create policy deposits_insert on public.deposits
 for insert with check (
-  public.is_mess_member(mess_id)
+  public.is_mess_manager(mess_id)
   and created_by = auth.uid()
   and public.is_mess_member_of(mess_id, user_id)
 );
 
 drop policy if exists deposits_update on public.deposits;
 create policy deposits_update on public.deposits
-for update using (public.is_mess_member(mess_id))
+for update using (public.is_mess_manager(mess_id))
 with check (
-  public.is_mess_member(mess_id)
+  public.is_mess_manager(mess_id)
   and public.is_mess_member_of(mess_id, user_id)
 );
 
 drop policy if exists deposits_delete on public.deposits;
 create policy deposits_delete on public.deposits
-for delete using (public.is_mess_member(mess_id));
+for delete using (public.is_mess_manager(mess_id));
 
 -- activity_log — শুধু ম্যানেজার দেখতে পারবেন, কেউ সরাসরি লিখতে/মুছতে পারবে না
 drop policy if exists activity_log_select on public.activity_log;

@@ -38,6 +38,13 @@ export function DashboardPage() {
   const currentMonth = isSameMonth(month, new Date())
   const todayMeals = totalMealsForDate(monthData.meals, todayISO())
   const eatingToday = monthData.meals.filter((meal) => meal.date === todayISO() && meal.count > 0).length
+  const quickEntries = [
+    { label: 'মিল', icon: UtensilsCrossed, to: '/meals', tone: 'bg-teal-50 text-teal-700' },
+    { label: 'বাজার', icon: ShoppingBasket, to: '/bazar', tone: 'bg-amber-50 text-amber-700' },
+    ...(activeMess?.role === 'manager'
+      ? [{ label: 'জমা', icon: Wallet, to: '/deposits', tone: 'bg-emerald-50 text-emerald-700' }]
+      : []),
+  ]
 
   const recent = useMemo(() => {
     const expenses = monthData.expenses.map((expense) => {
@@ -221,12 +228,8 @@ export function DashboardPage() {
 
               <section className="card p-4">
                 <SectionTitle title="দ্রুত এন্ট্রি" />
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'মিল', icon: UtensilsCrossed, to: '/meals', tone: 'bg-teal-50 text-teal-700' },
-                    { label: 'বাজার', icon: ShoppingBasket, to: '/bazar', tone: 'bg-amber-50 text-amber-700' },
-                    { label: 'জমা', icon: Wallet, to: '/deposits', tone: 'bg-emerald-50 text-emerald-700' },
-                  ].map((item) => (
+                <div className={quickEntries.length === 3 ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}>
+                  {quickEntries.map((item) => (
                     <Link
                       key={item.label}
                       to={item.to}

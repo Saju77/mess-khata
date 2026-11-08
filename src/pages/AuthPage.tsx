@@ -92,7 +92,7 @@ export function AuthPage() {
               আর ঝামেলা নয়।
             </h2>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-teal-100/70">
-              মিল, বাজার, জমা — সবাই একসাথে এন্ট্রি করবে, আর হিসাব নিজে থেকেই হবে।
+              মিল ও বাজার সবাই এন্ট্রি করবে, জমা ম্যানেজার রাখবেন — আর হিসাব নিজে থেকেই হবে।
             </p>
 
             <ul className="mt-8 space-y-3 text-sm text-teal-50/90">

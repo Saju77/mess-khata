@@ -342,6 +342,14 @@ export function createDemoApi(): Api {
     notify()
   }
 
+  function requireManager(messId: string) {
+    db = readDb()
+    const me = db.members.find((member) => member.user_id === DEMO_USER_ID)
+    if (db.mess.id !== messId || me?.role !== 'manager' || me.left_at) {
+      throw new Error('not manager')
+    }
+  }
+
   function logActivity(draft: {
     action: ActivityAction
     entity: ActivityEntity
@@ -631,6 +639,7 @@ export function createDemoApi(): Api {
     },
 
     async addDeposit(messId, input: DepositInput) {
+      requireManager(messId)
       const created: Deposit = {
         id: uid(),
         mess_id: messId,
@@ -652,6 +661,7 @@ export function createDemoApi(): Api {
     },
 
     async updateDeposit(id, messId, input) {
+      requireManager(messId)
       const deposit = db.deposits.find((item) => item.id === id && item.mess_id === messId)
       if (!deposit) throw new Error('জমা পাওয়া যায়নি।')
       const before = { ...deposit }
@@ -672,6 +682,7 @@ export function createDemoApi(): Api {
     },
 
     async deleteDeposit(id, messId) {
+      requireManager(messId)
       const removed = db.deposits.find((item) => item.id === id && item.mess_id === messId)
       db.deposits = db.deposits.filter((item) => !(item.id === id && item.mess_id === messId))
       if (removed) {

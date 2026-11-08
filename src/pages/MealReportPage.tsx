@@ -4,7 +4,6 @@ import {
   CalendarCheck2,
   CalendarDays,
   Download,
-  Lock,
   TrendingUp,
   Users,
   UtensilsCrossed,
@@ -48,7 +47,6 @@ function memberWasActive(member: Member, date: string): boolean {
 export function MealReportPage() {
   const { activeMess, members, month, monthData } = useApp()
   const [onlyWithMeals, setOnlyWithMeals] = useState(false)
-  const isManager = activeMess?.role === 'manager'
   const { start, end } = monthRange(month)
 
   const reportMembers = useMemo(
@@ -129,29 +127,6 @@ export function MealReportPage() {
     ]
     downloadCsv(`messkhata-meal-report-${monthKey(month)}.csv`, rows)
     toast.success('দৈনিক মিল রিপোর্ট CSV ডাউনলোড হয়েছে।')
-  }
-
-  if (!isManager) {
-    return (
-      <div className="animate-fade-up">
-        <PageHeader
-          title="মাসিক মিল রিপোর্ট"
-          subtitle="কে কোন দিন কত মিল খেয়েছেন — পুরো মাসের বিস্তারিত।"
-        />
-        <div className="card">
-          <EmptyState
-            icon={Lock}
-            title="শুধু ম্যানেজার দেখতে পারবেন"
-            description="সদস্যদের প্রতিদিনের বিস্তারিত মিল রিপোর্ট শুধু মেসের ম্যানেজার দেখতে পারেন।"
-            action={
-              <Link to="/meals">
-                <Button variant="secondary">মিল পেজে ফিরে যান</Button>
-              </Link>
-            }
-          />
-        </div>
-      </div>
-    )
   }
 
   return (

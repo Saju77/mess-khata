@@ -125,11 +125,9 @@ export function MealsPage() {
         actions={
           <>
             <MonthPicker />
-            {activeMess?.role === 'manager' ? (
-              <Link to="/meal-report">
-                <Button variant="secondary" icon={TableProperties}>মাসিক রিপোর্ট</Button>
-              </Link>
-            ) : null}
+            <Link to="/meal-report">
+              <Button variant="secondary" icon={TableProperties}>মাসিক রিপোর্ট</Button>
+            </Link>
           </>
         }
       />

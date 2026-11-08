@@ -459,28 +459,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addDeposit = useCallback(
     async (input: DepositInput) => {
       if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
+      if (activeMess?.role !== 'manager') throw new Error('not manager')
       await api.addDeposit(activeMessId, input)
       refresh()
     },
-    [api, activeMessId, refresh],
+    [api, activeMessId, activeMess?.role, refresh],
   )
 
   const updateDeposit = useCallback(
     async (id: string, input: DepositInput) => {
       if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
+      if (activeMess?.role !== 'manager') throw new Error('not manager')
       await api.updateDeposit(id, activeMessId, input)
       refresh()
     },
-    [api, activeMessId, refresh],
+    [api, activeMessId, activeMess?.role, refresh],
   )
 
   const deleteDeposit = useCallback(
     async (id: string) => {
       if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
+      if (activeMess?.role !== 'manager') throw new Error('not manager')
       await api.deleteDeposit(id, activeMessId)
       refresh()
     },
-    [api, activeMessId, refresh],
+    [api, activeMessId, activeMess?.role, refresh],
   )
 
   const loadActivity = useCallback(

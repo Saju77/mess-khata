@@ -9,6 +9,7 @@ import { friendlyError } from '../lib/errors'
 import type { Deposit } from '../lib/types'
 import {
   Avatar,
+  Alert,
   Button,
   ConfirmDialog,
   EmptyState,
@@ -27,6 +28,7 @@ import {
 export function DepositsPage() {
   const { activeMess, members, user, month, monthData, addDeposit, updateDeposit, deleteDeposit } = useApp()
   const currency = activeMess?.mess.currency || '৳'
+  const isManager = activeMess?.role === 'manager'
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Deposit | null>(null)
   const [date, setDate] = useState(defaultDateForMonth(month))
@@ -73,6 +75,7 @@ export function DepositsPage() {
   }, [deposits])
 
   const openAdd = () => {
+    if (!isManager) return
     setEditing(null)
     setDate(defaultDateForMonth(month))
     setUserId(defaultUserId)
@@ -83,6 +86,7 @@ export function DepositsPage() {
   }
 
   const openEdit = (deposit: Deposit) => {
+    if (!isManager) return
     setEditing(deposit)
     setDate(deposit.date)
     setUserId(deposit.user_id)
@@ -95,6 +99,10 @@ export function DepositsPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
+    if (!isManager) {
+      setError('জমা যোগ বা পরিবর্তন শুধু ম্যানেজার করতে পারবেন।')
+      return
+    }
     const numeric = Number(amount)
     if (!userId) {
       setError('সদস্য নির্বাচন করুন।')
@@ -124,6 +132,10 @@ export function DepositsPage() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return
+    if (!isManager) {
+      toast.error('জমা মুছতে শুধু ম্যানেজারের অনুমতি আছে।')
+      return
+    }
     setDeleting(true)
     try {
       await deleteDeposit(deleteTarget.id)
@@ -139,12 +151,16 @@ export function DepositsPage() {
   if (members.length === 0) {
     return (
       <div>
-        <PageHeader title="জমা" subtitle="সদস্যদের জমা টাকা লিখুন।" actions={<MonthPicker />} />
+        <PageHeader
+          title="জমা"
+          subtitle={isManager ? 'সদস্যদের জমা টাকা লিখুন।' : 'সদস্যদের জমা টাকার হিসাব দেখুন।'}
+          actions={<MonthPicker />}
+        />
         <div className="card">
           <EmptyState
             icon={Users}
             title="এখনো কোনো সদস্য নেই"
-            description="সদস্য যোগ হলে তাদের জমা এখানে লিখতে পারবেন।"
+            description={isManager ? 'সদস্য যোগ হলে তাদের জমা এখানে লিখতে পারবেন।' : 'সদস্য যোগ হলে তাদের জমার হিসাব এখানে দেখা যাবে।'}
             action={
               <Link to="/members">
                 <Button icon={Users}>সদস্য দেখুন</Button>
@@ -160,18 +176,26 @@ export function DepositsPage() {
     <div className="animate-fade-up">
       <PageHeader
         title="জমা"
-        subtitle="কোন সদস্য কত টাকা মেসে জমা দিয়েছেন, সেটি লিখুন।"
+        subtitle={isManager ? 'কোন সদস্য কত টাকা মেসে জমা দিয়েছেন, সেটি লিখুন।' : 'ম্যানেজারের যোগ করা সদস্যদের জমার হিসাব দেখুন।'}
         actions={
           <>
             <MonthPicker />
-            <Button icon={Plus} onClick={openAdd}>
-              জমা যোগ করুন
-            </Button>
+            {isManager ? (
+              <Button icon={Plus} onClick={openAdd}>
+                জমা যোগ করুন
+              </Button>
+            ) : null}
           </>
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      {!isManager ? (
+        <Alert tone="info" title="জমা নিয়ন্ত্রণ ম্যানেজারের হাতে">
+          আপনি সব সদস্যের জমার হিসাব দেখতে পারবেন। তবে জমা যোগ, এডিট বা মুছতে শুধু ম্যানেজারের অনুমতি আছে।
+        </Alert>
+      ) : null}
+
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard label="মোট জমা" value={formatMoney(total, currency)} hint={formatMonth(month)} icon={Wallet} tone="emerald" />
         <StatCard label="জমার এন্ট্রি" value={String(deposits.length)} hint="এই মাসে" icon={CalendarDays} tone="slate" />
         <StatCard
@@ -218,12 +242,8 @@ export function DepositsPage() {
             <EmptyState
               icon={Wallet}
               title="এই মাসে কোনো জমা নেই"
-              description="সদস্যদের জমা যোগ করলে তাদের ব্যালেন্স হিসাব হবে।"
-              action={
-                <Button icon={Plus} onClick={openAdd}>
-                  জমা যোগ করুন
-                </Button>
-              }
+              description={isManager ? 'সদস্যদের জমা যোগ করলে তাদের ব্যালেন্স হিসাব হবে।' : 'ম্যানেজার জমা যোগ করলে এখানে দেখা যাবে।'}
+              action={isManager ? <Button icon={Plus} onClick={openAdd}>জমা যোগ করুন</Button> : undefined}
             />
           ) : (
             <div className="divide-y divide-slate-100">
@@ -249,16 +269,18 @@ export function DepositsPage() {
                           </p>
                         </div>
                         <p className="num shrink-0 text-sm font-bold text-emerald-600">+{formatMoney(deposit.amount, currency)}</p>
-                        <div className="flex shrink-0 gap-0.5">
-                          <IconButton label="এডিট" icon={Pencil} size="sm" className="h-8 w-8" onClick={() => openEdit(deposit)} />
-                          <IconButton
-                            label="ডিলিট"
-                            icon={Trash2}
-                            size="sm"
-                            className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
-                            onClick={() => setDeleteTarget(deposit)}
-                          />
-                        </div>
+                        {isManager ? (
+                          <div className="flex shrink-0 gap-0.5">
+                            <IconButton label="এডিট" icon={Pencil} size="sm" className="h-8 w-8" onClick={() => openEdit(deposit)} />
+                            <IconButton
+                              label="ডিলিট"
+                              icon={Trash2}
+                              size="sm"
+                              className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                              onClick={() => setDeleteTarget(deposit)}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
@@ -269,7 +291,7 @@ export function DepositsPage() {
         </section>
       </div>
 
-      <Modal
+      {isManager ? <Modal
         open={open}
         onClose={() => setOpen(false)}
         title={editing ? 'জমা এডিট করুন' : 'নতুন জমা'}
@@ -332,9 +354,9 @@ export function DepositsPage() {
             />
           </Field>
         </form>
-      </Modal>
+      </Modal> : null}
 
-      <ConfirmDialog
+      {isManager ? <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="জমার এন্ট্রি মুছবেন?"
         description={deleteTarget ? `${formatDate(deleteTarget.date)} — ${formatMoney(deleteTarget.amount, currency)}` : undefined}
@@ -342,7 +364,7 @@ export function DepositsPage() {
         loading={deleting}
         onConfirm={handleDelete}
         onClose={() => setDeleteTarget(null)}
-      />
+      /> : null}
     </div>
   )
 }
