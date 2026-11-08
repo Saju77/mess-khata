@@ -124,6 +124,19 @@ export function createCloudApi(config: SupabaseConfig): Api {
       return { needsConfirmation: !data.session }
     },
 
+    async requestPasswordReset(email) {
+      const trimmed = email.trim()
+      const { error } = await client.auth.resetPasswordForEmail(trimmed, {
+        redirectTo: `${window.location.origin}/reset-password?email=${encodeURIComponent(trimmed)}`,
+      })
+      if (error) throw new Error(error.message)
+    },
+
+    async updatePassword(password) {
+      const { error } = await client.auth.updateUser({ password })
+      if (error) throw new Error(error.message)
+    },
+
     async signOut() {
       const { error } = await client.auth.signOut()
       if (error) throw new Error(error.message)

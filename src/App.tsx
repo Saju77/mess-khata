@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { AlertTriangle, Loader2, UtensilsCrossed } from 'lucide-react'
 import { AppProvider, useApp } from './context/AppContext'
@@ -7,6 +7,7 @@ import { AppShell } from './components/AppShell'
 import { Button } from './components/ui'
 import { WelcomePage } from './pages/WelcomePage'
 import { AuthPage } from './pages/AuthPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { MealsPage } from './pages/MealsPage'
@@ -46,6 +47,12 @@ function LoadingScreen({ label = 'লোড হচ্ছে...' }: { label?: str
 
 function AppRoutes() {
   const { booting, mode, config, user, memberships, membershipsLoaded } = useApp()
+  const location = useLocation()
+
+  if (location.pathname.replace(/\/+$/, '') === '/reset-password') {
+    if (booting) return <LoadingScreen label="লিংক যাচাই করা হচ্ছে..." />
+    return <ResetPasswordPage />
+  }
 
   if (booting) return <LoadingScreen />
 

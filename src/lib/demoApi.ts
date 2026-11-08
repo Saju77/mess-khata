@@ -402,6 +402,14 @@ export function createDemoApi(): Api {
       return { needsConfirmation: false }
     },
 
+    async requestPasswordReset(): Promise<void> {
+      throw new Error('ডেমো মোডে পাসওয়ার্ড রিসেট ইমেইল পাঠানো যায় না। Cloud মোডে লগইন করে ব্যবহার করুন।')
+    },
+
+    async updatePassword(): Promise<void> {
+      throw new Error('ডেমো মোডে পাসওয়ার্ড বদলানো যায় না। Cloud মোডে লগইন করে ব্যবহার করুন।')
+    },
+
     async signOut() {
       return undefined
     },

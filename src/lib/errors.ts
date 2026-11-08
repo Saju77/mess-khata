@@ -17,6 +17,10 @@ const MESSAGES: Record<string, string> = {
   'row-level security': 'এই তথ্যে আপনার অনুমতি নেই।',
   "could not find the table 'public.activity_log'":
     'ডেটাবেস আপডেট এখনো সম্পূর্ণ হয়নি। GitHub Actions-এ Supabase schema deploy সফল হয়েছে কিনা দেখুন।',
+  'email rate limit exceeded': 'এক ঘণ্টায় বেশি ইমেইল পাঠানো হয়েছে। কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।',
+  'email address not authorized': 'এই ইমেইলে Supabase-এর ডিফল্ট ইমেইল পাঠানো যায় না। README-তে custom SMTP সেটআপ করুন।',
+  'you can only request this after': 'একই ইমেইলে ৬০ সেকেন্ড পর আবার লিংক চাওয়া যাবে। একটু অপেক্ষা করুন।',
+  'link is invalid or has expired': 'লিংকটির মেয়াদ শেষ বা এটি আগেই ব্যবহার করা হয়েছে। নতুন লিংক চেয়ে নিন।',
 }
 
 export function friendlyError(error: unknown): string {

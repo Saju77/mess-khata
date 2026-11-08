@@ -61,6 +61,8 @@ interface AppContextValue {
 
   signIn: (email: string, password: string) => Promise<void>
   signUp: (name: string, email: string, password: string) => Promise<SignUpResult>
+  requestPasswordReset: (email: string) => Promise<void>
+  updatePassword: (password: string) => Promise<void>
   signOut: () => Promise<void>
   enterDemo: () => void
   connectCloud: (config: SupabaseConfig) => void
@@ -288,6 +290,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [api],
   )
 
+  const requestPasswordReset = useCallback(
+    async (email: string) => {
+      if (!api) throw new Error('অ্যাপ এখনো প্রস্তুত নয়।')
+      await api.requestPasswordReset(email)
+    },
+    [api],
+  )
+
+  const updatePassword = useCallback(
+    async (password: string) => {
+      if (!api) throw new Error('অ্যাপ এখনো প্রস্তুত নয়।')
+      await api.updatePassword(password)
+    },
+    [api],
+  )
+
   const signOut = useCallback(async () => {
     if (api) await api.signOut()
     if (mode === 'demo') {
@@ -504,6 +522,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       switchMess,
       signIn,
       signUp,
+      requestPasswordReset,
+      updatePassword,
       signOut,
       enterDemo,
       connectCloud,
@@ -547,6 +567,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       switchMess,
       signIn,
       signUp,
+      requestPasswordReset,
+      updatePassword,
       signOut,
       enterDemo,
       connectCloud,

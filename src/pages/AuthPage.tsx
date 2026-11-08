@@ -1,9 +1,20 @@
 import { useState } from 'react'
-import { ArrowRight, Cloud, Eye, EyeOff, LockKeyhole, Mail, UserRound, UtensilsCrossed } from 'lucide-react'
+import {
+  ArrowRight,
+  Cloud,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LockKeyhole,
+  Mail,
+  UserRound,
+  UtensilsCrossed,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
 import { friendlyError } from '../lib/errors'
 import { Alert, Button, Field, Input } from '../components/ui'
+import { PasswordResetRequest } from '../components/PasswordResetRequest'
 
 type Tab = 'login' | 'signup'
 
@@ -14,12 +25,14 @@ export function AuthPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [forgot, setForgot] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null)
 
   const switchTab = (next: Tab) => {
     setTab(next)
+    setForgot(false)
     setError(null)
     setConfirmationEmail(null)
   }
@@ -111,36 +124,50 @@ export function AuthPage() {
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            {tab === 'login' ? 'আবার স্বাগতম' : 'নতুন অ্যাকাউন্ট'}
+            {forgot ? 'পাসওয়ার্ড ভুলে গেছেন?' : tab === 'login' ? 'আবার স্বাগতম' : 'নতুন অ্যাকাউন্ট'}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {tab === 'login'
-              ? 'মেসের হিসাব দেখতে লগইন করুন।'
-              : 'নিজের নাম, ইমেইল ও পাসওয়ার্ড দিয়ে শুরু করুন।'}
+            {forgot
+              ? 'অ্যাকাউন্টের ইমেইল দিন — নতুন পাসওয়ার্ড সেট করার লিংক পাঠানো হবে।'
+              : tab === 'login'
+                ? 'মেসের হিসাব দেখতে লগইন করুন।'
+                : 'নিজের নাম, ইমেইল ও পাসওয়ার্ড দিয়ে শুরু করুন।'}
           </p>
 
-          <div className="mt-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => switchTab('login')}
-              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                tab === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              লগইন
-            </button>
-            <button
-              type="button"
-              onClick={() => switchTab('signup')}
-              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                tab === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              নতুন অ্যাকাউন্ট
-            </button>
-          </div>
+          {forgot ? null : (
+            <div className="mt-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => switchTab('login')}
+                className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                  tab === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                লগইন
+              </button>
+              <button
+                type="button"
+                onClick={() => switchTab('signup')}
+                className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                  tab === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                নতুন অ্যাকাউন্ট
+              </button>
+            </div>
+          )}
 
-          {confirmationEmail ? (
+          {forgot ? (
+            <div className="mt-5">
+              <PasswordResetRequest
+                initialEmail={email}
+                onBack={() => {
+                  setForgot(false)
+                  setError(null)
+                }}
+              />
+            </div>
+          ) : confirmationEmail ? (
             <div className="mt-5">
               <Alert tone="success" title="ইমেইল যাচাই করুন">
                 <p>
@@ -227,15 +254,33 @@ export function AuthPage() {
                 </div>
               </Field>
 
+              {tab === 'login' ? (
+                <div className="-mt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgot(true)
+                      setError(null)
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:underline"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" aria-hidden />
+                    পাসওয়ার্ড ভুলে গেছেন?
+                  </button>
+                </div>
+              ) : null}
+
               <Button type="submit" className="w-full" loading={loading} icon={ArrowRight}>
                 {tab === 'login' ? 'লগইন করুন' : 'অ্যাকাউন্ট তৈরি করুন'}
               </Button>
             </form>
           )}
 
-          <p className="mt-6 text-center text-xs leading-relaxed text-slate-400">
-            পাসওয়ার্ড ভুলে গেলে মেসের ম্যানেজারের সাথে যোগাযোগ করুন। ম্যানেজার Supabase Dashboard থেকে পাসওয়ার্ড রিসেট করতে পারবেন।
-          </p>
+          {!forgot ? (
+            <p className="mt-6 text-center text-xs leading-relaxed text-slate-400">
+              পাসওয়ার্ড ভুলে গেলে “পাসওয়ার্ড ভুলে গেছেন?” থেকে ইমেইল দিন। রিসেট লিংক ইমেইলে চলে যাবে।
+            </p>
+          ) : null}
         </section>
       </div>
     </div>

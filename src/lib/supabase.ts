@@ -8,7 +8,9 @@ export function createSupabaseClient(config: SupabaseConfig): SupabaseClient {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce',
+      // ক্লায়েন্ট-অনলি অ্যাপ: ইমেইলের লিংক যেকোনো ব্রাউজার/ডিভাইসে খুললেও যেন কাজ করে।
+      // PKCE-তে link-টি যে ব্রাউজারে চাওয়া হয়েছিল সেখানেই খুলতে হয়, নাহলে verifier মেলে না।
+      flowType: 'implicit',
     },
   })
 }

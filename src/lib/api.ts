@@ -25,6 +25,8 @@ export interface Api {
   onAuthChange(callback: (user: SessionUser | null) => void): () => void
   signIn(email: string, password: string): Promise<void>
   signUp(name: string, email: string, password: string): Promise<SignUpResult>
+  requestPasswordReset(email: string): Promise<void>
+  updatePassword(password: string): Promise<void>
   signOut(): Promise<void>
 
   listMemberships(): Promise<Membership[]>
