@@ -74,6 +74,7 @@ interface AppContextValue {
   leaveMess: () => Promise<void>
   regenerateInvite: () => Promise<string>
   removeMember: (userId: string) => Promise<void>
+  updateMemberJoinDate: (userId: string, joinedAt: string) => Promise<void>
   transferManager: (newManagerUserId: string) => Promise<void>
 
   saveMeals: (date: string, entries: MealEntry[]) => Promise<void>
@@ -411,6 +412,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [api, activeMessId, refresh],
   )
 
+  const updateMemberJoinDate = useCallback(
+    async (userId: string, joinedAt: string) => {
+      if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
+      await api.updateMemberJoinDate(activeMessId, userId, joinedAt)
+      refresh()
+    },
+    [api, activeMessId, refresh],
+  )
+
   const transferManager = useCallback(
     async (newManagerUserId: string) => {
       if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
@@ -537,6 +547,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       leaveMess,
       regenerateInvite,
       removeMember,
+      updateMemberJoinDate,
       transferManager,
       saveMeals,
       addExpense,
@@ -582,6 +593,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       leaveMess,
       regenerateInvite,
       removeMember,
+      updateMemberJoinDate,
       transferManager,
       saveMeals,
       addExpense,

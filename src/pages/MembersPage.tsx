@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, Copy, Link2, RefreshCw, Settings, Share2, UserMinus, UserPlus, Users } from 'lucide-react'
+import { CalendarDays, Check, Copy, Link2, RefreshCw, Settings, Share2, UserMinus, UserPlus, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
 import { balanceTone, calculateMonth, memberName } from '../lib/calc'
@@ -14,6 +14,8 @@ import {
   ConfirmDialog,
   EmptyState,
   Field,
+  Input,
+  Modal,
   PageHeader,
   SectionTitle,
   Select,
@@ -21,7 +23,7 @@ import {
 } from '../components/ui'
 
 export function MembersPage() {
-  const { activeMess, members, month, monthData, regenerateInvite, removeMember, transferManager, mode } = useApp()
+  const { activeMess, members, month, monthData, regenerateInvite, removeMember, updateMemberJoinDate, transferManager, mode } = useApp()
   const currency = activeMess?.mess.currency || '৳'
   const isManager = activeMess?.role === 'manager'
   const [copied, setCopied] = useState<'code' | 'link' | null>(null)
@@ -31,6 +33,9 @@ export function MembersPage() {
   const [transferring, setTransferring] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null)
   const [removing, setRemoving] = useState(false)
+  const [joinDateTarget, setJoinDateTarget] = useState<Member | null>(null)
+  const [joinDateValue, setJoinDateValue] = useState('')
+  const [savingJoinDate, setSavingJoinDate] = useState(false)
 
   const start = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`
   const endDate = new Date(month.getFullYear(), month.getMonth() + 1, 0)
@@ -93,6 +98,25 @@ export function MembersPage() {
       toast.error(friendlyError(err))
     } finally {
       setRemoving(false)
+    }
+  }
+
+  const openJoinDate = (member: Member) => {
+    setJoinDateTarget(member)
+    setJoinDateValue(member.joined_at.slice(0, 10))
+  }
+
+  const handleJoinDateSave = async () => {
+    if (!joinDateTarget || !joinDateValue) return
+    setSavingJoinDate(true)
+    try {
+      await updateMemberJoinDate(joinDateTarget.user_id, joinDateValue)
+      toast.success(`${memberName(joinDateTarget)}-এর যোগদানের তারিখ আপডেট হয়েছে।`)
+      setJoinDateTarget(null)
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setSavingJoinDate(false)
     }
   }
 
@@ -218,6 +242,17 @@ export function MembersPage() {
                           {member.profile.email ?? 'ইমেইল নেই'} · যোগ দিয়েছেন {formatDate(member.joined_at.slice(0, 10), true)}
                         </p>
                       </div>
+                      {isManager ? (
+                        <button
+                          type="button"
+                          onClick={() => openJoinDate(member)}
+                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700"
+                          aria-label={`${memberName(member)}-এর যোগদানের তারিখ বদলান`}
+                          title="যোগদানের তারিখ বদলান"
+                        >
+                          <CalendarDays className="h-4 w-4" />
+                        </button>
+                      ) : null}
                       {isManager && !member.left_at && member.role !== 'manager' ? (
                         <button
                           type="button"
@@ -281,6 +316,39 @@ export function MembersPage() {
         onConfirm={handleRemove}
         onClose={() => setRemoveTarget(null)}
       />
+
+      <Modal
+        open={Boolean(joinDateTarget)}
+        onClose={() => setJoinDateTarget(null)}
+        title="যোগদানের তারিখ বদলান"
+        description={joinDateTarget ? `${memberName(joinDateTarget)}-কে কবে থেকে মেসে ধরা হবে, সেটি ঠিক করুন।` : undefined}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setJoinDateTarget(null)} disabled={savingJoinDate}>
+              বাতিল
+            </Button>
+            <Button onClick={handleJoinDateSave} loading={savingJoinDate}>
+              সেভ করুন
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs leading-relaxed text-slate-500">
+            এই তারিখ থেকেই সদস্যটির মিল, ব্যালেন্স ও জমা হিসাব শুরু হবে। পুরনো মাসের হিসাব লিখতে তারিখটি পেছনে নিন।
+          </p>
+          <Field label="যোগদানের তারিখ" htmlFor="join-date">
+            <Input
+              id="join-date"
+              type="date"
+              value={joinDateValue}
+              onChange={(event) => setJoinDateValue(event.target.value)}
+              required
+            />
+          </Field>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={transferOpen}

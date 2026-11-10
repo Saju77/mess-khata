@@ -37,6 +37,7 @@ export interface Api {
   regenerateInvite(messId: string): Promise<string>
   listMembers(messId: string): Promise<Member[]>
   removeMember(messId: string, userId: string): Promise<void>
+  updateMemberJoinDate(messId: string, userId: string, joinedAt: string): Promise<void>
   transferManager(messId: string, newManagerUserId: string): Promise<void>
 
   loadMonth(messId: string, start: string, end: string): Promise<MonthData>

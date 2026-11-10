@@ -483,6 +483,22 @@ export function createDemoApi(): Api {
       persist()
     },
 
+    async updateMemberJoinDate(messId, userId, joinedAt) {
+      if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
+      const membership = db.members.find((item) => item.user_id === userId)
+      if (!membership) throw new Error('সদস্য পাওয়া যায়নি।')
+      const before = { ...membership }
+      membership.joined_at = `${joinedAt}T00:00:00.000Z`
+      logActivity({
+        action: 'update',
+        entity: 'member',
+        entity_id: userId,
+        data: { ...membership } as unknown as Record<string, unknown>,
+        old_data: before as unknown as Record<string, unknown>,
+      })
+      persist()
+    },
+
     async transferManager(messId, newManagerUserId) {
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
       const members = db.members

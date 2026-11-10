@@ -201,6 +201,15 @@ export function createCloudApi(config: SupabaseConfig): Api {
       if (error) throw new Error(error.message)
     },
 
+    async updateMemberJoinDate(messId, userId, joinedAt) {
+      const { error } = await client
+        .from('mess_members')
+        .update({ joined_at: `${joinedAt}T00:00:00.000Z` })
+        .eq('mess_id', messId)
+        .eq('user_id', userId)
+      if (error) throw new Error(error.message)
+    },
+
     async transferManager(messId, newManagerUserId): Promise<void> {
       const { error } = await client.rpc('transfer_mess_manager', {
         p_mess: messId,
