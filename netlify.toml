@@ -5,6 +5,13 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# version.json সবসময় নতুন version দেবে (PWA update detection)
+[[redirects]]
+  from = "/version.json"
+  to = "/version.json"
+  status = 200
+  force = false
+
 # React Router (client-side routing) — যেকোনো URL সরাসরি খুললেও index.html লোড হবে
 [[redirects]]
   from = "/*"
