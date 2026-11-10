@@ -23,7 +23,7 @@ import type {
   Profile,
   SessionUser,
 } from './types'
-
+import { calculateOpeningBalances } from './calc'
 const DB_KEY = 'messkhata.demo.db.v1'
 const DEMO_USER_ID = 'demo-user-rahim'
 
@@ -513,11 +513,22 @@ export function createDemoApi(): Api {
     },
 
     async loadMonth(messId, start, end): Promise<MonthData> {
-      if (db.mess.id !== messId) return { meals: [], expenses: [], deposits: [] }
+      if (db.mess.id !== messId) {
+        return { meals: [], expenses: [], deposits: [], openingBalances: {} }
+      }
+      const members = db.members.map((membership) => memberFor(membership.user_id))
+      const openingBalances = calculateOpeningBalances(
+        members,
+        db.meals,
+        db.expenses,
+        db.deposits,
+        start,
+      )
       return {
         meals: db.meals.filter((meal) => meal.date >= start && meal.date <= end),
         expenses: db.expenses.filter((expense) => expense.date >= start && expense.date <= end),
         deposits: db.deposits.filter((deposit) => deposit.date >= start && deposit.date <= end),
+        openingBalances,
       }
     },
 

@@ -64,7 +64,7 @@ export function MealsPage() {
   const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
 
   const summary = useMemo(
-    () => calculateMonth(members, monthData.meals, monthData.expenses, monthData.deposits, start, end),
+    () => calculateMonth(members, monthData.meals, monthData.expenses, monthData.deposits, start, end, monthData.openingBalances),
     [members, monthData, start, end],
   )
 

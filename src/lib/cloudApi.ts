@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Api, SignUpResult } from './api'
 import type { SupabaseConfig } from './config'
 import { createSupabaseClient } from './supabase'
+import { calculateOpeningBalances } from './calc'
 import type {
   ActivityLogEntry,
   Deposit,
@@ -233,10 +234,47 @@ export function createCloudApi(config: SupabaseConfig): Api {
         .lte('date', end)
       if (depositsError) throw new Error(depositsError.message)
 
+      const { data: priorMeals, error: priorMealsError } = await client
+        .from('meals')
+        .select('*')
+        .eq('mess_id', messId)
+        .lt('date', start)
+      if (priorMealsError) throw new Error(priorMealsError.message)
+
+      const { data: priorExpenses, error: priorExpensesError } = await client
+        .from('expenses')
+        .select('*')
+        .eq('mess_id', messId)
+        .lt('date', start)
+      if (priorExpensesError) throw new Error(priorExpensesError.message)
+
+      const { data: priorDeposits, error: priorDepositsError } = await client
+        .from('deposits')
+        .select('*')
+        .eq('mess_id', messId)
+        .lt('date', start)
+      if (priorDepositsError) throw new Error(priorDepositsError.message)
+
+      const { data: memberRows, error: membersError } = await client
+        .from('mess_members')
+        .select('user_id, role, joined_at, left_at, profile:profiles!mess_members_user_id_fkey(id, full_name, email)')
+        .eq('mess_id', messId)
+      if (membersError) throw new Error(membersError.message)
+
+      const members = (memberRows ?? []).map(normalizeMember)
+      const openingBalances = calculateOpeningBalances(
+        members,
+        (priorMeals ?? []).map(normalizeMeal),
+        (priorExpenses ?? []).map(normalizeExpense),
+        (priorDeposits ?? []).map(normalizeDeposit),
+        start,
+      )
+
       return {
         meals: (meals ?? []).map(normalizeMeal),
         expenses: (expenses ?? []).map(normalizeExpense),
         deposits: (deposits ?? []).map(normalizeDeposit),
+        openingBalances,
       }
     },
 

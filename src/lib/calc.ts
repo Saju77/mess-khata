@@ -24,6 +24,7 @@ export function calculateMonth(
   deposits: Deposit[],
   start: string,
   end: string,
+  openingBalances: Record<string, number> = {},
 ): MonthSummary {
   const activeMembers = activeMembersInMonth(members, start, end)
 
@@ -66,14 +67,16 @@ export function calculateMonth(
     const mealCost = memberMeals * mealRate
     const totalBill = mealCost + otherShare
     const deposit = depositsByMember.get(member.user_id) ?? 0
+    const openingBalance = openingBalances[member.user_id] ?? 0
     return {
       member,
+      openingBalance,
       meals: memberMeals,
       mealCost,
       otherShare,
       totalBill,
       deposit,
-      balance: deposit - totalBill,
+      balance: openingBalance + deposit - totalBill,
     }
   })
 
@@ -109,6 +112,39 @@ export function dailyBazarTotals(expenses: Expense[], start: string, end: string
     cursor.setDate(cursor.getDate() + 1)
   }
   return days
+}
+
+export function calculateOpeningBalances(
+  members: Member[],
+  priorMeals: Meal[],
+  priorExpenses: Expense[],
+  priorDeposits: Deposit[],
+  beforeDate: string,
+): Record<string, number> {
+  const balances = new Map<string, number>()
+  const months = new Set<string>()
+
+  for (const meal of priorMeals) if (meal.date < beforeDate) months.add(meal.date.slice(0, 7))
+  for (const expense of priorExpenses) if (expense.date < beforeDate) months.add(expense.date.slice(0, 7))
+  for (const deposit of priorDeposits) if (deposit.date < beforeDate) months.add(deposit.date.slice(0, 7))
+
+  for (const monthKey of [...months].sort()) {
+    const [year, month] = monthKey.split('-').map(Number)
+    const start = `${monthKey}-01`
+    const lastDay = new Date(year, month, 0).getDate()
+    const end = `${monthKey}-${String(lastDay).padStart(2, '0')}`
+
+    const monthMeals = priorMeals.filter((meal) => meal.date >= start && meal.date <= end)
+    const monthExpenses = priorExpenses.filter((expense) => expense.date >= start && expense.date <= end)
+    const monthDeposits = priorDeposits.filter((deposit) => deposit.date >= start && deposit.date <= end)
+
+    const summary = calculateMonth(members, monthMeals, monthExpenses, monthDeposits, start, end)
+    for (const row of summary.rows) {
+      balances.set(row.member.user_id, (balances.get(row.member.user_id) ?? 0) + row.balance)
+    }
+  }
+
+  return Object.fromEntries(balances)
 }
 
 export function balanceTone(balance: number): 'due' | 'advance' | 'settled' {

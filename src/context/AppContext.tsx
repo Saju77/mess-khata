@@ -87,7 +87,7 @@ interface AppContextValue {
   resetDemo: () => Promise<void>
 }
 
-const EMPTY_MONTH: MonthData = { meals: [], expenses: [], deposits: [] }
+const EMPTY_MONTH: MonthData = { meals: [], expenses: [], deposits: [], openingBalances: {} }
 
 const AppContext = createContext<AppContextValue | null>(null)
 

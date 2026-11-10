@@ -77,6 +77,7 @@ export interface MonthData {
   meals: Meal[]
   expenses: Expense[]
   deposits: Deposit[]
+  openingBalances: Record<string, number>
 }
 
 export interface ExpenseInput {
@@ -103,6 +104,7 @@ export interface MealEntry {
 
 export interface MonthSummaryRow {
   member: Member
+  openingBalance: number
   meals: number
   mealCost: number
   otherShare: number

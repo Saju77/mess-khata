@@ -58,9 +58,13 @@ export function DepositsPage() {
       map.set(deposit.user_id, (map.get(deposit.user_id) ?? 0) + deposit.amount)
     }
     return members
-      .map((member) => ({ member, total: map.get(member.user_id) ?? 0 }))
+      .map((member) => ({
+        member,
+        total: map.get(member.user_id) ?? 0,
+        opening: monthData.openingBalances[member.user_id] ?? 0,
+      }))
       .sort((a, b) => b.total - a.total)
-  }, [deposits, members])
+  }, [deposits, members, monthData.openingBalances])
 
   const maxMemberTotal = Math.max(...byMember.map((item) => item.total), 1)
 
@@ -212,12 +216,19 @@ export function DepositsPage() {
         <section className="card p-4 sm:p-5">
           <SectionTitle title="সদস্য অনুযায়ী জমা" description={formatMonth(month)} />
           <div className="space-y-3">
-            {byMember.map(({ member, total: memberTotal }) => (
+            {byMember.map(({ member, total: memberTotal, opening }) => (
               <div key={member.user_id}>
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <Avatar name={memberName(member)} size="sm" className="h-6 w-6 text-[10px]" />
-                    <span className="truncate text-xs font-medium text-slate-700">{memberName(member)}</span>
+                    <div className="min-w-0">
+                      <span className="truncate text-xs font-medium text-slate-700">{memberName(member)}</span>
+                      {opening !== 0 ? (
+                        <p className={`num text-[10px] ${opening > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          পূর্বের: {formatMoney(opening, currency)}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                   <span className="num shrink-0 text-xs font-semibold text-slate-700">{formatMoney(memberTotal, currency)}</span>
                 </div>

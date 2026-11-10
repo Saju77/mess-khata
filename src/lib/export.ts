@@ -40,12 +40,13 @@ export function summaryToCsv(
     ['মোট জমা', formatMoney(summary.totalDeposits, currency)],
     ['মেস ফান্ড', formatMoney(summary.fundBalance, currency)],
     [],
-    ['সদস্য', 'মিল', 'মিল খরচ', 'অন্যান্য ভাগ', 'মোট বিল', 'জমা', 'ব্যালেন্স', 'অবস্থা'],
+    ['সদস্য', 'পূর্বের ব্যালেন্স', 'মিল', 'মিল খরচ', 'অন্যান্য ভাগ', 'মোট বিল', 'জমা', 'ব্যালেন্স', 'অবস্থা'],
     ...summary.rows.map((row) => {
       const tone = balanceTone(row.balance)
       const status = tone === 'due' ? 'দিতে হবে' : tone === 'advance' ? 'পাওনা' : 'সমান'
       return [
         memberName(row.member),
+        formatMoney(row.openingBalance, currency),
         formatMeals(row.meals),
         formatMoney(row.mealCost, currency),
         formatMoney(row.otherShare, currency),

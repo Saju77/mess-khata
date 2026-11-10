@@ -19,7 +19,7 @@ export function SummaryPage() {
   const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
 
   const summary = useMemo(
-    () => calculateMonth(members, monthData.meals, monthData.expenses, monthData.deposits, start, end),
+    () => calculateMonth(members, monthData.meals, monthData.expenses, monthData.deposits, start, end, monthData.openingBalances),
     [members, monthData, start, end],
   )
 
@@ -157,6 +157,7 @@ export function SummaryPage() {
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
                     <th className="px-4 py-2.5 font-semibold sm:px-5">সদস্য</th>
+                    <th className="px-3 py-2.5 text-right font-semibold">পূর্বের</th>
                     <th className="px-3 py-2.5 text-right font-semibold">মিল</th>
                     <th className="px-3 py-2.5 text-right font-semibold">মিল খরচ</th>
                     <th className="px-3 py-2.5 text-right font-semibold">অন্যান্য</th>
@@ -174,6 +175,9 @@ export function SummaryPage() {
                         <td className="px-4 py-3 sm:px-5">
                           <p className="font-medium text-slate-800">{memberName(row.member)}</p>
                           <p className="text-[10px] text-slate-400">{row.member.role === 'manager' ? 'ম্যানেজার' : 'সদস্য'}</p>
+                        </td>
+                        <td className={`num px-3 py-3 text-right ${row.openingBalance > 0 ? 'text-emerald-600' : row.openingBalance < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {row.openingBalance === 0 ? '০' : formatMoney(row.openingBalance, currency)}
                         </td>
                         <td className="num px-3 py-3 text-right text-slate-700">{formatMeals(row.meals)}</td>
                         <td className="num px-3 py-3 text-right text-slate-700">{formatMoney(row.mealCost, currency)}</td>
@@ -195,6 +199,7 @@ export function SummaryPage() {
                 <tfoot>
                   <tr className="border-t border-slate-200 bg-slate-50/80 text-xs font-bold text-slate-700">
                     <td className="px-4 py-3 sm:px-5">মোট</td>
+                    <td className="num px-3 py-3 text-right">{formatMoney(summary.rows.reduce((sum, row) => sum + row.openingBalance, 0), currency)}</td>
                     <td className="num px-3 py-3 text-right">{formatMeals(summary.totalMeals)}</td>
                     <td className="num px-3 py-3 text-right">{formatMoney(summary.totalMeals * summary.mealRate, currency)}</td>
                     <td className="num px-3 py-3 text-right">{formatMoney(summary.otherTotal, currency)}</td>
