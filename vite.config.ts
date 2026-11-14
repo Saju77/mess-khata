@@ -17,9 +17,14 @@ function getBuildVersion(): string {
   return gitSha ? `${gitSha}-${timestamp}` : timestamp
 }
 
+// Compute once so the JS bundle and version.json always contain the exact
+// same value. Two separate calls would produce different timestamps, making
+// every client think a new deployment exists (and reload forever).
+const BUILD_VERSION = getBuildVersion()
+
 export default defineConfig({
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(getBuildVersion()),
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(BUILD_VERSION),
   },
   plugins: [
     react(),
@@ -62,9 +67,9 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
+            // Never cache the deployment version — a stale value would hide updates
             urlPattern: /\/version\.json$/i,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'version', expiration: { maxEntries: 1, maxAgeSeconds: 60 } },
+            handler: 'NetworkOnly',
           },
         ],
       },
@@ -72,9 +77,11 @@ export default defineConfig({
     {
       name: 'generate-version-json',
       closeBundle() {
-        const version = getBuildVersion()
         const outDir = resolve(process.cwd(), 'dist')
-        writeFileSync(resolve(outDir, 'version.json'), JSON.stringify({ version, builtAt: new Date().toISOString() }))
+        writeFileSync(
+          resolve(outDir, 'version.json'),
+          JSON.stringify({ version: BUILD_VERSION, builtAt: new Date().toISOString() }),
+        )
       },
     },
   ],
