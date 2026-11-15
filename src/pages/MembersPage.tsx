@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Check, Copy, Link2, RefreshCw, Settings, Share2, UserMinus, UserPlus, Users } from 'lucide-react'
+import { CalendarDays, Check, Copy, Link2, RefreshCw, Settings, Share2, ShieldMinus, UserPlus, UserX, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
 import { balanceTone, calculateMonth, memberName } from '../lib/calc'
@@ -18,24 +18,22 @@ import {
   Modal,
   PageHeader,
   SectionTitle,
-  Select,
   StatCard,
 } from '../components/ui'
 
 export function MembersPage() {
-  const { activeMess, members, month, monthData, regenerateInvite, removeMember, updateMemberJoinDate, transferManager, mode } = useApp()
+  const { activeMess, members, month, monthData, regenerateInvite, removeMember, updateMemberJoinDate, setMemberRole, mode } = useApp()
   const currency = activeMess?.mess.currency || '৳'
   const isManager = activeMess?.role === 'manager'
   const [copied, setCopied] = useState<'code' | 'link' | null>(null)
   const [regenerating, setRegenerating] = useState(false)
-  const [transferOpen, setTransferOpen] = useState(false)
-  const [transferTarget, setTransferTarget] = useState<Member | null>(null)
-  const [transferring, setTransferring] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null)
   const [removing, setRemoving] = useState(false)
   const [joinDateTarget, setJoinDateTarget] = useState<Member | null>(null)
   const [joinDateValue, setJoinDateValue] = useState('')
   const [savingJoinDate, setSavingJoinDate] = useState(false)
+  const [roleTarget, setRoleTarget] = useState<{ member: Member; role: 'manager' | 'member' } | null>(null)
+  const [roleSaving, setRoleSaving] = useState(false)
 
   const start = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`
   const endDate = new Date(month.getFullYear(), month.getMonth() + 1, 0)
@@ -50,6 +48,8 @@ export function MembersPage() {
   const inviteLink = `${window.location.origin}/onboarding?code=${inviteCode}`
 
   const activeCount = members.filter((member) => !member.left_at).length
+  const activeManagers = members.filter((member) => !member.left_at && member.role === 'manager')
+  const managerNames = activeManagers.map((member) => memberName(member)).join(', ') || '—'
 
   const copy = async (value: string, kind: 'code' | 'link') => {
     try {
@@ -120,27 +120,21 @@ export function MembersPage() {
     }
   }
 
-  const openTransfer = () => {
-    const others = members.filter((m) => !m.left_at && m.role !== 'manager')
-    setTransferTarget(others.length === 1 ? others[0] : null)
-    setTransferOpen(true)
-  }
-
-  const handleTransfer = async () => {
-    if (!transferTarget || !transferTarget.user_id) {
-      toast.error('নতুন ম্যানেজার বেছে নিন।')
-      return
-    }
-    setTransferring(true)
+  const handleRoleChange = async () => {
+    if (!roleTarget) return
+    setRoleSaving(true)
     try {
-      await transferManager(transferTarget.user_id)
-      toast.success(`${memberName(transferTarget)}-কে ম্যানেজার বানানো হয়েছে।`)
-      setTransferTarget(null)
-      setTransferOpen(false)
+      await setMemberRole(roleTarget.member.user_id, roleTarget.role)
+      toast.success(
+        roleTarget.role === 'manager'
+          ? `${memberName(roleTarget.member)}-কে ম্যানেজার করা হয়েছে।`
+          : `${memberName(roleTarget.member)} এখন সাধারণ সদস্য।`,
+      )
+      setRoleTarget(null)
     } catch (err) {
       toast.error(friendlyError(err))
     } finally {
-      setTransferring(false)
+      setRoleSaving(false)
     }
   }
 
@@ -152,14 +146,9 @@ export function MembersPage() {
         actions={
           <>
             {isManager ? (
-              <>
-                <Button variant="secondary" icon={RefreshCw} onClick={handleRegenerate} loading={regenerating}>
-                  নতুন কোড
-                </Button>
-                <Button variant="secondary" icon={UserPlus} onClick={openTransfer}>
-                  ম্যানেজার বদলান
-                </Button>
-              </>
+              <Button variant="secondary" icon={RefreshCw} onClick={handleRegenerate} loading={regenerating}>
+                নতুন কোড
+              </Button>
             ) : null}
             <Link to="/settings">
               <Button variant="secondary" icon={Settings}>
@@ -172,7 +161,7 @@ export function MembersPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="মোট সদস্য" value={String(members.length)} hint={`${activeCount} জন সক্রিয়`} icon={Users} tone="teal" />
-        <StatCard label="ম্যানেজার" value={members.find((member) => member.role === 'manager')?.profile.full_name ?? '—'} hint="মেস পরিচালনা করেন" icon={UserPlus} tone="violet" />
+        <StatCard label="ম্যানেজার" value={String(activeManagers.length)} hint={managerNames} icon={UserPlus} tone="violet" />
         <StatCard label="এই মাসের জমা" value={formatMoney(summary.totalDeposits, currency)} hint={formatMonth(month)} icon={Check} tone="emerald" />
         <StatCard label="মোট মিল" value={formatMeals(summary.totalMeals)} hint={`${summary.activeMembers.length} জনের`} icon={Users} tone="amber" />
       </div>
@@ -253,7 +242,34 @@ export function MembersPage() {
                           <CalendarDays className="h-4 w-4" />
                         </button>
                       ) : null}
-                      {isManager && !member.left_at && member.role !== 'manager' ? (
+                      {isManager && !member.left_at && member.role === 'manager' ? (
+                        <button
+                          type="button"
+                          onClick={() => setRoleTarget({ member, role: 'member' })}
+                          disabled={activeManagers.length <= 1}
+                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`${memberName(member)}-কে সাধারণ সদস্য করুন`}
+                          title={
+                            activeManagers.length <= 1
+                              ? 'মেসে অন্তত একজন ম্যানেজার থাকতে হবে'
+                              : 'সাধারণ সদস্য করুন'
+                          }
+                        >
+                          <ShieldMinus className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      {isManager && !member.left_at && member.role === 'member' ? (
+                        <button
+                          type="button"
+                          onClick={() => setRoleTarget({ member, role: 'manager' })}
+                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700"
+                          aria-label={`${memberName(member)}-কে ম্যানেজার করুন`}
+                          title="ম্যানেজার করুন"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      {isManager && !member.left_at && member.role === 'member' ? (
                         <button
                           type="button"
                           onClick={() => setRemoveTarget(member)}
@@ -261,21 +277,7 @@ export function MembersPage() {
                           aria-label={`${memberName(member)}-কে সরান`}
                           title="মেস থেকে সরান"
                         >
-                          <UserMinus className="h-4 w-4" />
-                        </button>
-                      ) : null}
-                      {isManager && !member.left_at && member.role === 'member' ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTransferTarget(member)
-                            setTransferOpen(true)
-                          }}
-                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-amber-50 hover:text-amber-700"
-                          aria-label={`${memberName(member)}-কে ম্যানেজার করুন`}
-                          title="ম্যানেজার করুন"
-                        >
-                          <UserPlus className="h-4 w-4" />
+                          <UserX className="h-4 w-4" />
                         </button>
                       ) : null}
                     </div>
@@ -351,47 +353,21 @@ export function MembersPage() {
       </Modal>
 
       <ConfirmDialog
-        open={transferOpen}
-        title="ম্যানেজার বদলান?"
+        open={Boolean(roleTarget)}
+        title={roleTarget?.role === 'manager' ? 'ম্যানেজার করবেন?' : 'সাধারণ সদস্য করবেন?'}
         description={
-          transferTarget
-            ? `${memberName(transferTarget)}-কে ম্যানেজার বানানো হলে বর্তমান ম্যানেজার সাধারণ সদস্য হয়ে যাবেন।`
-            : 'নতুন ম্যানেজার বেছে নিন।'
+          roleTarget
+            ? roleTarget.role === 'manager'
+              ? `${memberName(roleTarget.member)}-কে ম্যানেজার করা হলে তিনি জমা, সদস্য ব্যবস্থাপনা, মেস সেটিংস ও অ্যাক্টিভিটি ইতিহাস দেখতে ও পরিচালনা করতে পারবেন।`
+              : `${memberName(roleTarget.member)}-কে সাধারণ সদস্য করা হলে তিনি আর ম্যানেজার ক্ষমতা পাবেন না।`
+            : undefined
         }
-        confirmLabel="হ্যাঁ, বদলান"
-        danger={false}
-        loading={transferring}
-        onConfirm={handleTransfer}
-        onClose={() => {
-          setTransferTarget(null)
-          setTransferOpen(false)
-        }}
-      >
-        <Field label="নতুন ম্যানেজার" htmlFor="new-manager-select">
-          <Select
-            id="new-manager-select"
-            value={transferTarget?.user_id ?? ''}
-            onChange={(event) => {
-              const userId = event.target.value
-              if (!userId) {
-                setTransferTarget(null)
-                return
-              }
-              const member = members.find((m) => m.user_id === userId)
-              if (member) setTransferTarget(member)
-            }}
-          >
-            <option value="">সদস্য বেছে নিন...</option>
-            {members
-              .filter((m) => !m.left_at && m.role !== 'manager')
-              .map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {memberName(m)}
-                </option>
-              ))}
-          </Select>
-        </Field>
-      </ConfirmDialog>
+        confirmLabel={roleTarget?.role === 'manager' ? 'হ্যাঁ, ম্যানেজার করুন' : 'হ্যাঁ, সাধারণ সদস্য করুন'}
+        danger={roleTarget?.role === 'member'}
+        loading={roleSaving}
+        onConfirm={handleRoleChange}
+        onClose={() => setRoleTarget(null)}
+      />
     </div>
   )
 }

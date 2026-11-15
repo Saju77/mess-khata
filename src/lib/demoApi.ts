@@ -449,8 +449,31 @@ export function createDemoApi(): Api {
       persist()
     },
 
-    async leaveMess() {
-      throw new Error('ম্যানেজার মেস ছাড়তে পারবেন না।')
+    async leaveMess(messId) {
+      db = readDb()
+      if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
+      const membership = db.members.find((item) => item.user_id === DEMO_USER_ID && !item.left_at)
+      if (!membership) return
+      if (membership.role === 'manager') {
+        const activeManagers = db.members.filter((m) => m.role === 'manager' && !m.left_at).length
+        if (activeManagers <= 1) throw new Error('মেসে অন্তত একজন ম্যানেজার থাকতে হবে।')
+        if (db.mess.owner_id === DEMO_USER_ID) {
+          const nextOwner = db.members.find(
+            (m) => m.role === 'manager' && !m.left_at && m.user_id !== DEMO_USER_ID,
+          )
+          if (nextOwner) db.mess.owner_id = nextOwner.user_id
+        }
+      }
+      const before = { ...membership }
+      membership.left_at = iso(new Date())
+      logActivity({
+        action: 'update',
+        entity: 'member',
+        entity_id: DEMO_USER_ID,
+        data: { ...membership } as unknown as Record<string, unknown>,
+        old_data: before as unknown as Record<string, unknown>,
+      })
+      persist()
     },
 
     async regenerateInvite(messId) {
@@ -470,7 +493,7 @@ export function createDemoApi(): Api {
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
       const membership = db.members.find((item) => item.user_id === targetUserId)
       if (!membership) throw new Error('সদস্য পাওয়া যায়নি।')
-      if (membership.role === 'manager') throw new Error('ম্যানেজারকে সরানো যায় না।')
+      if (membership.role === 'manager') throw new Error('ম্যানেজারকে সরানো যাবে না। আগে সাধারণ সদস্য করুন।')
       const before = { ...membership }
       membership.left_at = iso(new Date())
       logActivity({
@@ -499,31 +522,34 @@ export function createDemoApi(): Api {
       persist()
     },
 
-    async transferManager(messId, newManagerUserId) {
+    async setMemberRole(messId, userId, role) {
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
-      const members = db.members
-      const currentManager = members.find((m) => m.role === 'manager')
-      if (!currentManager) throw new Error('এই মেসে কোনো ম্যানেজার নেই।')
-      const newManager = members.find((m) => m.user_id === newManagerUserId)
-      if (!newManager || newManager.role === 'manager') throw new Error('নতুন ম্যানেজার এই মেসের সক্রিয় সদস্য নন।')
-      const oldRole = { ...currentManager }
-      const newRole = { ...newManager }
-      currentManager.role = 'member'
-      newManager.role = 'manager'
-      db.mess = { ...db.mess, owner_id: newManagerUserId }
+      if (role !== 'manager' && role !== 'member') throw new Error('invalid role')
+      const target = db.members.find((m) => m.user_id === userId && !m.left_at)
+      if (!target) throw new Error('নির্বাচিত সদস্য এই মেসের সক্রিয় সদস্য নন।')
+      if (target.role === role) return
+
+      if (target.role === 'manager' && role === 'member') {
+        const activeManagers = db.members.filter((m) => m.role === 'manager' && !m.left_at).length
+        if (activeManagers <= 1) throw new Error('মেসে অন্তত একজন ম্যানেজার থাকতে হবে।')
+      }
+
+      const before = { ...target }
+      target.role = role
+
+      if (before.role === 'manager' && role === 'member' && db.mess.owner_id === target.user_id) {
+        const nextOwner = db.members.find(
+          (m) => m.role === 'manager' && !m.left_at && m.user_id !== target.user_id,
+        )
+        if (nextOwner) db.mess.owner_id = nextOwner.user_id
+      }
+
       logActivity({
         action: 'update',
         entity: 'member',
-        entity_id: currentManager.user_id,
-        data: { ...currentManager } as unknown as Record<string, unknown>,
-        old_data: oldRole as unknown as Record<string, unknown>,
-      })
-      logActivity({
-        action: 'update',
-        entity: 'member',
-        entity_id: newManager.user_id,
-        data: { ...newManager } as unknown as Record<string, unknown>,
-        old_data: newRole as unknown as Record<string, unknown>,
+        entity_id: target.user_id,
+        data: { ...target } as unknown as Record<string, unknown>,
+        old_data: before as unknown as Record<string, unknown>,
       })
       persist()
     },

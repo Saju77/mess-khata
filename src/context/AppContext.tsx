@@ -75,7 +75,7 @@ interface AppContextValue {
   regenerateInvite: () => Promise<string>
   removeMember: (userId: string) => Promise<void>
   updateMemberJoinDate: (userId: string, joinedAt: string) => Promise<void>
-  transferManager: (newManagerUserId: string) => Promise<void>
+  setMemberRole: (userId: string, role: import('../lib/types').Role) => Promise<void>
 
   saveMeals: (date: string, entries: MealEntry[]) => Promise<void>
   addExpense: (input: ExpenseInput) => Promise<void>
@@ -421,10 +421,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [api, activeMessId, refresh],
   )
 
-  const transferManager = useCallback(
-    async (newManagerUserId: string) => {
+  const setMemberRole = useCallback(
+    async (userId: string, role: import('../lib/types').Role) => {
       if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
-      await api.transferManager(activeMessId, newManagerUserId)
+      await api.setMemberRole(activeMessId, userId, role)
       refresh()
     },
     [api, activeMessId, refresh],
@@ -548,7 +548,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       regenerateInvite,
       removeMember,
       updateMemberJoinDate,
-      transferManager,
+      setMemberRole,
       saveMeals,
       addExpense,
       updateExpense,
@@ -594,7 +594,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       regenerateInvite,
       removeMember,
       updateMemberJoinDate,
-      transferManager,
+      setMemberRole,
       saveMeals,
       addExpense,
       updateExpense,

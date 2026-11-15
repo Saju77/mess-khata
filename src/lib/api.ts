@@ -38,7 +38,7 @@ export interface Api {
   listMembers(messId: string): Promise<Member[]>
   removeMember(messId: string, userId: string): Promise<void>
   updateMemberJoinDate(messId: string, userId: string, joinedAt: string): Promise<void>
-  transferManager(messId: string, newManagerUserId: string): Promise<void>
+  setMemberRole(messId: string, userId: string, role: import('./types').Role): Promise<void>
 
   loadMonth(messId: string, start: string, end: string): Promise<MonthData>
   saveMeals(messId: string, date: string, entries: MealEntry[]): Promise<void>

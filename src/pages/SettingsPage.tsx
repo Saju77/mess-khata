@@ -40,6 +40,7 @@ export function SettingsPage() {
   const {
     activeMess,
     memberships,
+    members,
     user,
     mode,
     config,
@@ -57,6 +58,8 @@ export function SettingsPage() {
   } = useApp()
   const currency = activeMess?.mess.currency || '৳'
   const isManager = activeMess?.role === 'manager'
+  const activeManagerCount = members.filter((member) => !member.left_at && member.role === 'manager').length
+  const canLeaveMess = mode !== 'demo' && (!isManager || activeManagerCount > 1)
 
   const [messName, setMessName] = useState(activeMess?.mess.name ?? '')
   const [messCurrency, setMessCurrency] = useState(currency)
@@ -327,13 +330,17 @@ export function SettingsPage() {
             <Button variant="secondary" icon={LogOut} onClick={handleSignOut}>
               লগ আউট
             </Button>
-            <Button variant="secondary" icon={Wallet} onClick={() => setLeaveOpen(true)} disabled={isManager || mode === 'demo'}>
+            <Button variant="secondary" icon={Wallet} onClick={() => setLeaveOpen(true)} disabled={!canLeaveMess}>
               মেস ছাড়ুন
             </Button>
           </div>
-          {isManager ? (
+          {isManager && activeManagerCount <= 1 ? (
             <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-              ম্যানেজার মেস ছাড়তে পারবেন না।
+              মেসে অন্তত একজন ম্যানেজার থাকতে হবে, তাই আপনি এখন মেস ছাড়তে পারবেন না।
+            </p>
+          ) : isManager ? (
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+              আরেকজন ম্যানেজার থাকায় আপনি চাইলে মেস ছাড়তে পারবেন।
             </p>
           ) : null}
         </section>

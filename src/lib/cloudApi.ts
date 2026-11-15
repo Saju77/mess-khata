@@ -210,10 +210,11 @@ export function createCloudApi(config: SupabaseConfig): Api {
       if (error) throw new Error(error.message)
     },
 
-    async transferManager(messId, newManagerUserId): Promise<void> {
-      const { error } = await client.rpc('transfer_mess_manager', {
+    async setMemberRole(messId, userId, role): Promise<void> {
+      const { error } = await client.rpc('set_member_role', {
         p_mess: messId,
-        p_new_manager: newManagerUserId,
+        p_user: userId,
+        p_role: role,
       })
       if (error) throw new Error(error.message)
     },

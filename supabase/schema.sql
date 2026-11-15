@@ -346,6 +346,17 @@ begin
     raise exception 'cannot remove yourself';
   end if;
 
+  if exists (
+    select 1
+    from public.mess_members
+    where mess_id = p_mess
+      and user_id = p_user
+      and role = 'manager'
+      and left_at is null
+  ) then
+    raise exception 'ম্যানেজারকে সরানো যাবে না। আগে সাধারণ সদস্য করুন।';
+  end if;
+
   update public.mess_members
   set left_at = current_date
   where mess_id = p_mess
@@ -355,11 +366,12 @@ end;
 $$;
 
 -- ------------------------------------------------------------
--- RPC: ম্যানেজার বদলান (শুধু ম্যানেজার করতে পারবে)
+-- RPC: সদস্যের ভূমিকা পরিবর্তন (promote/demote) — শুধু ম্যানেজার
 -- ------------------------------------------------------------
-create or replace function public.transfer_mess_manager(
+create or replace function public.set_member_role(
   p_mess uuid,
-  p_new_manager uuid
+  p_user uuid,
+  p_role text
 )
 returns void
 language plpgsql
@@ -367,50 +379,75 @@ security definer
 set search_path = public
 as $$
 declare
-  v_current_manager uuid;
+  v_target_role text;
+  v_manager_count int;
+  v_owner uuid;
+  v_new_owner uuid;
 begin
-  -- শুধু বর্তমান ম্যানেজারই ম্যানেজার বদলাতে পারবেন
   if not public.is_mess_manager(p_mess) then
-    raise exception 'শুধু ম্যানেজার ম্যানেজার বদলাতে পারবেন।';
+    raise exception 'not manager';
   end if;
 
-  select user_id into v_current_manager
+  if p_role not in ('manager', 'member') then
+    raise exception 'invalid role';
+  end if;
+
+  select role
+  into v_target_role
   from public.mess_members
-  where mess_id = p_mess and role = 'manager'
-  limit 1;
+  where mess_id = p_mess
+    and user_id = p_user
+    and left_at is null
+  for update;
 
-  if v_current_manager is null then
-    raise exception 'এই মেসে কোনো ম্যানেজার নেই।';
+  if v_target_role is null then
+    raise exception 'নির্বাচিত সদস্য এই মেসের সক্রিয় সদস্য নন।';
   end if;
 
-  if p_new_manager = v_current_manager then
-    raise exception 'নতুন ম্যানেজার বর্তমান ম্যানেজারের একই ব্যক্তি।';
+  if v_target_role = p_role then
+    return;
   end if;
 
-  if not exists (
-    select 1 from public.mess_members
-    where mess_id = p_mess and user_id = p_new_manager and left_at is null
-  ) then
-    raise exception 'নতুন ম্যানেজার এই মেসের সক্রিয় সদস্য নন।';
+  if v_target_role = 'manager' and p_role = 'member' then
+    select count(*)
+    into v_manager_count
+    from public.mess_members
+    where mess_id = p_mess
+      and role = 'manager'
+      and left_at is null;
+
+    if v_manager_count <= 1 then
+      raise exception 'মেসে অন্তত একজন ম্যানেজার থাকতে হবে।';
+    end if;
   end if;
 
   update public.mess_members
-  set role = 'member'
-  where mess_id = p_mess and user_id = v_current_manager;
+  set role = p_role
+  where mess_id = p_mess
+    and user_id = p_user;
 
-  update public.mess_members
-  set role = 'manager'
-  where mess_id = p_mess and user_id = p_new_manager;
+  -- মালিক (owner) যদি আর ম্যানেজার না থাকেন, অন্য একজন সক্রিয় ম্যানেজারকে owner করুন
+  select owner_id into v_owner from public.messes where id = p_mess;
+  if v_owner = p_user and p_role = 'member' then
+    select user_id
+    into v_new_owner
+    from public.mess_members
+    where mess_id = p_mess
+      and role = 'manager'
+      and left_at is null
+      and user_id <> p_user
+    order by joined_at asc
+    limit 1;
 
-  -- মেসের মালিকানাও নতুন ম্যানেজারের নামে যাবে
-  update public.messes
-  set owner_id = p_new_manager
-  where id = p_mess;
+    if v_new_owner is not null then
+      update public.messes set owner_id = v_new_owner where id = p_mess;
+    end if;
+  end if;
 end;
 $$;
 
 -- ------------------------------------------------------------
--- RPC: সদস্য নিজে মেস ছাড়া (ম্যানেজার পারবে না)
+-- RPC: সদস্য নিজে মেস ছাড়া (শেষ ম্যানেজার পারবে না)
 -- ------------------------------------------------------------
 create or replace function public.leave_mess(p_mess uuid)
 returns void
@@ -418,12 +455,51 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_role text;
+  v_manager_count int;
+  v_owner uuid;
+  v_new_owner uuid;
 begin
-  if exists (
-    select 1 from public.mess_members
-    where mess_id = p_mess and user_id = auth.uid() and role = 'manager'
-  ) then
-    raise exception 'manager cannot leave';
+  select role
+  into v_role
+  from public.mess_members
+  where mess_id = p_mess
+    and user_id = auth.uid()
+    and left_at is null;
+
+  if v_role is null then
+    return;
+  end if;
+
+  if v_role = 'manager' then
+    select count(*)
+    into v_manager_count
+    from public.mess_members
+    where mess_id = p_mess
+      and role = 'manager'
+      and left_at is null;
+
+    if v_manager_count <= 1 then
+      raise exception 'মেসে অন্তত একজন ম্যানেজার থাকতে হবে।';
+    end if;
+
+    select owner_id into v_owner from public.messes where id = p_mess;
+    if v_owner = auth.uid() then
+      select user_id
+      into v_new_owner
+      from public.mess_members
+      where mess_id = p_mess
+        and role = 'manager'
+        and left_at is null
+        and user_id <> auth.uid()
+      order by joined_at asc
+      limit 1;
+
+      if v_new_owner is not null then
+        update public.messes set owner_id = v_new_owner where id = p_mess;
+      end if;
+    end if;
   end if;
 
   update public.mess_members
@@ -714,7 +790,7 @@ grant execute on function public.create_mess(text) to authenticated;
 grant execute on function public.join_mess(text) to authenticated;
 grant execute on function public.regenerate_invite(uuid) to authenticated;
 grant execute on function public.remove_member(uuid, uuid) to authenticated;
-grant execute on function public.transfer_mess_manager(uuid, uuid) to authenticated;
+grant execute on function public.set_member_role(uuid, uuid, text) to authenticated;
 grant execute on function public.leave_mess(uuid) to authenticated;
 
 -- ------------------------------------------------------------
