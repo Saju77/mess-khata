@@ -1,5 +1,6 @@
 export type Role = 'manager' | 'member'
 export type ExpenseKind = 'bazar' | 'other'
+export type EntryStatus = 'approved' | 'pending' | 'rejected'
 
 export interface SessionUser {
   id: string
@@ -44,6 +45,7 @@ export interface Meal {
   date: string
   count: number
   note: string | null
+  status: EntryStatus
   created_by: string | null
   created_at: string
 }
@@ -57,6 +59,7 @@ export interface Expense {
   category: string
   description: string
   include_in_meal_rate: boolean
+  status: EntryStatus
   paid_by: string | null
   created_by: string | null
   created_at: string

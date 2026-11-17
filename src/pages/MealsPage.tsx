@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CalendarDays, Check, Minus, Plus, RotateCcw, TableProperties, UtensilsCrossed, Users } from 'lucide-react'
+import { CalendarDays, Check, Minus, Plus, RotateCcw, TableProperties, UtensilsCrossed, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
-import { calculateMonth, memberName } from '../lib/calc'
+import { calculateMonth, entryStatus, memberName } from '../lib/calc'
 import {
   defaultDateForMonth,
   formatDate,
@@ -13,6 +13,7 @@ import {
   todayISO,
 } from '../lib/format'
 import { friendlyError } from '../lib/errors'
+import type { EntryStatus } from '../lib/types'
 import { Avatar, Badge, Button, EmptyState, Field, Input, MonthPicker, PageHeader, SectionTitle } from '../components/ui'
 
 function dateInSelectedMonth(dateIso: string, month: Date): boolean {
@@ -21,9 +22,10 @@ function dateInSelectedMonth(dateIso: string, month: Date): boolean {
 }
 
 export function MealsPage() {
-  const { activeMess, members, month, monthData, saveMeals, setMonth } = useApp()
+  const { activeMess, members, month, monthData, saveMeals, setMonth, setEntryStatus } = useApp()
   const [searchParams] = useSearchParams()
   const currency = activeMess?.mess.currency || '৳'
+  const isManager = activeMess?.role === 'manager'
   const [selectedDate, setSelectedDate] = useState(() => {
     const requestedDate = searchParams.get('date')
     return requestedDate && dateInSelectedMonth(requestedDate, month)
@@ -32,6 +34,7 @@ export function MealsPage() {
   })
   const [counts, setCounts] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [acting, setActing] = useState(false)
 
   useEffect(() => {
     if (!dateInSelectedMonth(selectedDate, month)) {
@@ -70,6 +73,46 @@ export function MealsPage() {
 
   const dailyTotal = activeForDate.reduce((sum, member) => sum + (Number(counts[member.user_id]) || 0), 0)
 
+  // approval: এই তারিখের মিলগুলোর অবস্থা
+  const dateMeals = useMemo(
+    () => monthData.meals.filter((meal) => meal.date === selectedDate),
+    [monthData.meals, selectedDate],
+  )
+  const statusByUser = useMemo(() => {
+    const map = new Map<string, EntryStatus>()
+    for (const meal of dateMeals) map.set(meal.user_id, entryStatus(meal))
+    return map
+  }, [dateMeals])
+  const pendingDateMeals = dateMeals.filter(
+    (meal) => entryStatus(meal) === 'pending' && Number(meal.count) > 0,
+  )
+  const rejectedDateMeals = dateMeals.filter(
+    (meal) => entryStatus(meal) === 'rejected' && Number(meal.count) > 0,
+  )
+  const awaitingDecision = [...pendingDateMeals, ...rejectedDateMeals]
+
+  const handleBatchStatus = async (status: EntryStatus) => {
+    const targets = status === 'approved' ? awaitingDecision : pendingDateMeals
+    if (targets.length === 0) return
+    setActing(true)
+    try {
+      await setEntryStatus(
+        'meal',
+        targets.map((meal) => meal.id),
+        status,
+      )
+      toast.success(
+        status === 'approved'
+          ? `${targets.length} জনের মিল অনুমোদন হয়েছে।`
+          : `${targets.length} জনের মিল বাতিল করা হয়েছে।`,
+      )
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setActing(false)
+    }
+  }
+
   const setCount = (userId: string, value: number) => {
     const safe = Math.max(0, Math.min(20, Math.round(value * 2) / 2))
     setCounts((prev) => ({ ...prev, [userId]: String(safe) }))
@@ -89,7 +132,11 @@ export function MealsPage() {
         count: Number(counts[member.user_id]) || 0,
       }))
       await saveMeals(selectedDate, entries)
-      toast.success(`${formatDate(selectedDate, true)}-এর মিল সেভ হয়েছে।`)
+      toast.success(
+        isManager
+          ? `${formatDate(selectedDate, true)}-এর মিল সেভ হয়েছে।`
+          : `${formatDate(selectedDate, true)}-এর মিল সেভ হয়েছে — ম্যানেজারের অনুমোদনের অপেক্ষায়।`,
+      )
     } catch (err) {
       toast.error(friendlyError(err))
     } finally {
@@ -178,8 +225,49 @@ export function MealsPage() {
               <span className="num font-semibold text-slate-700">{formatMeals(dailyTotal)} মিল</span>
               <span>·</span>
               <span>{activeForDate.length} জন সদস্য</span>
+              {pendingDateMeals.length > 0 ? (
+                <Badge tone="amber">{pendingDateMeals.length} টি অপেক্ষমাণ</Badge>
+              ) : null}
+              {rejectedDateMeals.length > 0 ? (
+                <Badge tone="rose">{rejectedDateMeals.length} টি বাতিল</Badge>
+              ) : null}
             </div>
           </div>
+
+          {isManager && awaitingDecision.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2.5 sm:px-5">
+              <p className="text-xs font-medium leading-relaxed text-amber-900">
+                {pendingDateMeals.length > 0
+                  ? `⏳ ${pendingDateMeals.length} জনের মিল অনুমোদনের অপেক্ষায়`
+                  : '⏳ কোনো মিল অপেক্ষায় নেই'}
+                {rejectedDateMeals.length > 0
+                  ? ` · ${rejectedDateMeals.length} জনের মিল বাতিল হয়েছে`
+                  : ''}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={Check}
+                  loading={acting}
+                  onClick={() => handleBatchStatus('approved')}
+                >
+                  {awaitingDecision.length} জন অনুমোদন
+                </Button>
+                {pendingDateMeals.length > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={X}
+                    loading={acting}
+                    onClick={() => handleBatchStatus('rejected')}
+                  >
+                    সব বাতিল
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {activeForDate.length === 0 ? (
             <EmptyState
@@ -199,6 +287,12 @@ export function MealsPage() {
                       <div className="flex items-center gap-1.5">
                         <p className="truncate text-sm font-semibold text-slate-800">{memberName(member)}</p>
                         {member.role === 'manager' ? <Badge tone="teal">ম্যানেজার</Badge> : null}
+                        {statusByUser.get(member.user_id) === 'pending' ? (
+                          <Badge tone="amber">অপেক্ষমাণ</Badge>
+                        ) : null}
+                        {statusByUser.get(member.user_id) === 'rejected' ? (
+                          <Badge tone="rose">বাতিল</Badge>
+                        ) : null}
                       </div>
                       <p className="num mt-0.5 text-[11px] text-slate-500">
                         এ মাসে {formatMeals(row?.meals ?? 0)} মিল
@@ -243,7 +337,10 @@ export function MealsPage() {
 
           <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <p className="text-xs leading-relaxed text-slate-500">
-              ০.৫ ধাপে মিল দিতে পারবেন (যেমন ১.৫)। সেভ করলে সাথে সাথে সবার ব্যালেন্স আপডেট হবে।
+              ০.৫ ধাপে মিল দিতে পারবেন (যেমন ১.৫)।{' '}
+              {isManager
+                ? 'ম্যানেজার হিসেবে সেভ করলে সাথে সাথে হিসাবে যুক্ত হবে।'
+                : 'সেভ করলে ম্যানেজার অনুমোদনের পর হিসাবে যুক্ত হবে।'}
             </p>
             <Button onClick={handleSave} loading={saving} icon={Check} className="shrink-0">
               মিল সেভ করুন

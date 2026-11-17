@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Calculator, Download, FileText, Printer, Share2, UtensilsCrossed } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
-import { balanceTone, calculateMonth, memberName } from '../lib/calc'
+import { approvedOnly, balanceTone, calculateMonth, memberName } from '../lib/calc'
 import { buildShareText, downloadCsv, summaryToCsv } from '../lib/export'
 import { formatMeals, formatMoney, formatMonth, monthKey } from '../lib/format'
 import { friendlyError } from '../lib/errors'
@@ -27,7 +27,8 @@ export function SummaryPage() {
 
   const spendingRows = useMemo(() => {
     const map = new Map<string, { bazar: number; other: number }>()
-    for (const expense of monthData.expenses) {
+    // শুধু অনুমোদিত খরচই এখানে গোনা হয়
+    for (const expense of approvedOnly(monthData.expenses)) {
       const userId = expense.paid_by ?? expense.created_by
       if (!userId) continue
       const totals = map.get(userId) ?? { bazar: 0, other: 0 }

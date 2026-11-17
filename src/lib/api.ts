@@ -3,6 +3,7 @@ import type {
   ActivityLogEntry,
   Deposit,
   DepositInput,
+  EntryStatus,
   Expense,
   ExpenseInput,
   Meal,
@@ -46,6 +47,13 @@ export interface Api {
   addExpense(messId: string, input: ExpenseInput): Promise<void>
   updateExpense(id: string, messId: string, input: ExpenseInput): Promise<void>
   deleteExpense(id: string, messId: string): Promise<void>
+  /** approve/reject — শুধু ম্যানেজার (DB trigger দিয়ে সুরক্ষিত) */
+  setEntryStatus(
+    messId: string,
+    entity: 'meal' | 'expense',
+    ids: string[],
+    status: EntryStatus,
+  ): Promise<void>
 
   addDeposit(messId: string, input: DepositInput): Promise<void>
   updateDeposit(id: string, messId: string, input: DepositInput): Promise<void>
@@ -54,6 +62,9 @@ export interface Api {
   listActivity(messId: string, limit?: number, offset?: number): Promise<ActivityLogEntry[]>
 
   subscribe(messId: string, onChange: () => void): () => void
+
+  /** ডেমো টেস্টিং: "সদস্য হিসেবে দেখুন" টগল (cloud-এ এর কোনো প্রভাব নেই) */
+  setDemoViewAsMember(enabled: boolean): Promise<void>
 
   getInitialMonth(): Date
   resetDemo?(): Promise<void>

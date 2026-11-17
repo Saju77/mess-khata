@@ -82,11 +82,17 @@ create table if not exists public.meals (
   date date not null,
   count numeric(5, 2) not null default 0 check (count >= 0 and count <= 20),
   note text,
+  status text not null default 'approved',
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (mess_id, user_id, date)
 );
+
+-- approval flow: সদস্যদের মিল pending থাকবে, ম্যানেজার approve করলে তবে final
+-- (পুরনো ডেটাবেসে কলাম না থাকলে যোগ হবে; পুরনো সব এন্ট্রি স্বয়ংক্রিয়ভাবে approved)
+alter table public.meals
+  add column if not exists status text not null default 'approved';
 
 -- ------------------------------------------------------------
 -- 5. Expenses (বাজার + অন্যান্য)
@@ -100,6 +106,7 @@ create table if not exists public.expenses (
   category text not null default 'other',
   description text not null default '',
   include_in_meal_rate boolean not null default false,
+  status text not null default 'approved',
   paid_by uuid references public.profiles(id) on delete set null,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -109,6 +116,10 @@ create table if not exists public.expenses (
 -- আগের ডেটাবেসে paid_by কলাম না থাকলে যোগ হবে (schema আবার চালালেও নিরাপদ)
 alter table public.expenses
   add column if not exists paid_by uuid references public.profiles(id) on delete set null;
+
+-- approval flow: সদস্যদের খরচ pending থাকবে, ম্যানেজার approve করলে তবে final
+alter table public.expenses
+  add column if not exists status text not null default 'approved';
 
 -- পুরনো এন্ট্রিতে কে করেছেন জানা না থাকলে যিনি এন্ট্রি করেছিলেন তাঁকে ধরা হচ্ছে
 update public.expenses
@@ -534,6 +545,91 @@ for each row execute function public.set_updated_at();
 drop trigger if exists deposits_updated_at on public.deposits;
 create trigger deposits_updated_at before update on public.deposits
 for each row execute function public.set_updated_at();
+
+-- ------------------------------------------------------------
+-- Approval flow trigger (মিল + খরচ)
+-- ম্যানেজার লিখলে সরাসরি approved; সদস্য লিখলে pending;
+-- সদস্য status নিজে বদলাতে পারবে না; সদস্য content এডিট করলে
+-- এন্ট্রি আবার pending হয়ে যায়; approve/reject শুধু ম্যানেজার।
+-- ------------------------------------------------------------
+create or replace function public.apply_entry_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_is_manager boolean;
+begin
+  if tg_op = 'INSERT' then
+    -- সদস্য যা-ই পাঠাক, insert-এ status নিজে নিজে ঠিক হবে
+    v_is_manager := public.is_mess_manager(new.mess_id);
+    new.status := case when v_is_manager then 'approved' else 'pending' end;
+    return new;
+  end if;
+
+  -- UPDATE
+  if new.status is distinct from old.status then
+    if not public.is_mess_manager(old.mess_id) then
+      raise exception 'not manager';
+    end if;
+    if new.status not in ('approved', 'pending', 'rejected') then
+      raise exception 'invalid status';
+    end if;
+    return new;
+  end if;
+
+  -- সদস্য content এডিট করলে (চাইলে approved হলেও) এন্ট্রি আবার pending
+  if not public.is_mess_manager(old.mess_id)
+    and (to_jsonb(new) - 'status' - 'updated_at' - 'created_by')
+        is distinct from (to_jsonb(old) - 'status' - 'updated_at' - 'created_by')
+  then
+    new.status := 'pending';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists meals_entry_status on public.meals;
+create trigger meals_entry_status before insert or update on public.meals
+for each row execute function public.apply_entry_status();
+
+drop trigger if exists expenses_entry_status on public.expenses;
+create trigger expenses_entry_status before insert or update on public.expenses
+for each row execute function public.apply_entry_status();
+
+-- অনুমোদিত (final) এন্ট্রি সদস্য মুড়তে পারবে না; ম্যানেজার মুড়তে পারবেন
+-- (mess cascade delete বা সিস্টেম পরিষ্কারে বাধা দেবে না)
+create or replace function public.guard_entry_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.status = 'approved'
+    and exists (
+      select 1 from public.mess_members
+      where mess_id = old.mess_id
+        and user_id = auth.uid()
+        and left_at is null
+    )
+    and not public.is_mess_manager(old.mess_id)
+  then
+    raise exception 'অনুমোদিত এন্ট্রি সদস্য মুছতে পারবেন না।';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists meals_entry_delete_guard on public.meals;
+create trigger meals_entry_delete_guard before delete on public.meals
+for each row execute function public.guard_entry_delete();
+
+drop trigger if exists expenses_entry_delete_guard on public.expenses;
+create trigger expenses_entry_delete_guard before delete on public.expenses
+for each row execute function public.guard_entry_delete();
 
 -- ------------------------------------------------------------
 -- Activity log trigger

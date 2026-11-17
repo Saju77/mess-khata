@@ -7,6 +7,7 @@ import { calculateOpeningBalances } from './calc'
 import type {
   ActivityLogEntry,
   Deposit,
+  EntryStatus,
   Expense,
   ExpenseInput,
   Meal,
@@ -58,11 +59,11 @@ function normalizeMember(row: Row): Member {
 }
 
 function normalizeMeal(row: Row): Meal {
-  return { ...row, count: Number(row.count ?? 0) } as Meal
+  return { ...row, count: Number(row.count ?? 0), status: (row.status as EntryStatus) ?? 'approved' } as Meal
 }
 
 function normalizeExpense(row: Row): Expense {
-  return { ...row, amount: Number(row.amount ?? 0) } as Expense
+  return { ...row, amount: Number(row.amount ?? 0), status: (row.status as EntryStatus) ?? 'approved' } as Expense
 }
 
 function normalizeDeposit(row: Row): Deposit {
@@ -330,6 +331,18 @@ export function createCloudApi(config: SupabaseConfig): Api {
       if (error) throw new Error(error.message)
     },
 
+    async setEntryStatus(messId, entity, ids, status) {
+      if (ids.length === 0) return
+      const table = entity === 'meal' ? 'meals' : 'expenses'
+      const { error } = await client
+        .from(table)
+        .update({ status })
+        .eq('mess_id', messId)
+        .in('id', ids)
+      // সদস্য status বদলাতে চাইলে DB trigger 'not manager' ফেরত দেয়
+      if (error) throw new Error(error.message)
+    },
+
     async addDeposit(messId, input) {
       const uid = await userId()
       const { error } = await client.from('deposits').insert({
@@ -407,6 +420,11 @@ export function createCloudApi(config: SupabaseConfig): Api {
       return () => {
         void client.removeChannel(channel)
       }
+    },
+
+    async setDemoViewAsMember() {
+      // cloud-এ এর কোনো প্রভাব নেই — শুধু ডেমো মোডের টেস্টিং টগল
+      return undefined
     },
 
     getInitialMonth() {

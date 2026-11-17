@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
-import { activeMembersInMonth, memberName } from '../lib/calc'
+import { activeMembersInMonth, entryStatus, memberName } from '../lib/calc'
 import { downloadCsv } from '../lib/export'
 import {
   BN_MONTHS_SHORT,
@@ -61,6 +61,8 @@ export function MealReportPage() {
     const byDate = new Map<string, Map<string, number>>()
 
     for (const meal of monthData.meals) {
+      // শুধু অনুমোদিত মিলই রিপোর্টে গোনা হয়
+      if (entryStatus(meal) !== 'approved') continue
       const dateMeals = byDate.get(meal.date) ?? new Map<string, number>()
       dateMeals.set(meal.user_id, (dateMeals.get(meal.user_id) ?? 0) + Number(meal.count || 0))
       byDate.set(meal.date, dateMeals)
@@ -197,7 +199,7 @@ export function MealReportPage() {
                 <h2 className="text-base font-semibold text-slate-900">দিন অনুযায়ী মিল</h2>
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                ০ = মিল খাননি · — = ঐ দিনে সক্রিয় ছিলেন না · তারিখে চাপলে দিনের মিল খুলবে
+                ০ = মিল খাননি · — = ঐ দিনে সক্রিয় ছিলেন না · শুধু ম্যানেজার-অনুমোদিত মিল গোনা হয়েছে · তারিখে চাপলে দিনের মিল খুলবে
               </p>
             </div>
             <div className="no-print flex items-center gap-1 rounded-xl bg-slate-100 p-1">

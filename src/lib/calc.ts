@@ -1,11 +1,22 @@
 import type {
   Deposit,
+  EntryStatus,
   Expense,
   Meal,
   Member,
   MonthSummary,
   MonthSummaryRow,
 } from './types'
+
+/** এন্ট্রির approval অবস্থা; পুরনো ডেটায় status না থাকলে approved ধরা হয় */
+export function entryStatus(row: { status?: EntryStatus }): EntryStatus {
+  return row.status ?? 'approved'
+}
+
+/** শুধু অনুমোদিত (final) এন্ট্রি — এগুলোই হিসাবে যোগ হয় */
+export function approvedOnly<T>(rows: T[]): T[] {
+  return rows.filter((row) => entryStatus(row as { status?: EntryStatus }) === 'approved')
+}
 
 export function activeMembersInMonth(members: Member[], start: string, end: string): Member[] {
   return members
@@ -28,12 +39,16 @@ export function calculateMonth(
 ): MonthSummary {
   const activeMembers = activeMembersInMonth(members, start, end)
 
-  const totalMeals = meals.reduce((sum, meal) => sum + Number(meal.count || 0), 0)
-  const bazarTotal = expenses
+  // pending/rejected এন্ট্রি কোনো হিসাবে যোগ হয় না — শুধু ম্যানেজার approve করলে
+  const approvedMeals = approvedOnly(meals)
+  const approvedExpenses = approvedOnly(expenses)
+
+  const totalMeals = approvedMeals.reduce((sum, meal) => sum + Number(meal.count || 0), 0)
+  const bazarTotal = approvedExpenses
     .filter((expense) => expense.kind === 'bazar')
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
 
-  const otherExpenses = expenses.filter((expense) => expense.kind === 'other')
+  const otherExpenses = approvedExpenses.filter((expense) => expense.kind === 'other')
   const otherTotal = otherExpenses
     .filter((expense) => !expense.include_in_meal_rate)
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
@@ -44,13 +59,13 @@ export function calculateMonth(
       .filter((expense) => expense.include_in_meal_rate)
       .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
 
-  const totalExpenses = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
+  const totalExpenses = approvedExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
   const totalDeposits = deposits.reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0)
   const mealRate = totalMeals > 0 ? mealPool / totalMeals : 0
   const otherShare = activeMembers.length > 0 ? otherTotal / activeMembers.length : 0
 
   const mealsByMember = new Map<string, number>()
-  for (const meal of meals) {
+  for (const meal of approvedMeals) {
     mealsByMember.set(meal.user_id, (mealsByMember.get(meal.user_id) ?? 0) + Number(meal.count || 0))
   }
 
@@ -100,7 +115,7 @@ export function dailyBazarTotals(expenses: Expense[], start: string, end: string
   const cursor = new Date(`${start}T00:00:00`)
   const last = new Date(`${end}T00:00:00`)
   const totals = new Map<string, number>()
-  for (const expense of expenses) {
+  for (const expense of approvedOnly(expenses)) {
     if (expense.kind !== 'bazar') continue
     totals.set(expense.date, (totals.get(expense.date) ?? 0) + Number(expense.amount || 0))
   }
@@ -124,9 +139,14 @@ export function calculateOpeningBalances(
   const balances = new Map<string, number>()
   const months = new Set<string>()
 
-  for (const meal of priorMeals) if (meal.date < beforeDate) months.add(meal.date.slice(0, 7))
-  for (const expense of priorExpenses) if (expense.date < beforeDate) months.add(expense.date.slice(0, 7))
-  for (const deposit of priorDeposits) if (deposit.date < beforeDate) months.add(deposit.date.slice(0, 7))
+  // পূর্বের মাসেরও শুধু অনুমোদিত এন্ট্রিই carry-forward হবে
+  const priorApprovedMeals = approvedOnly(priorMeals)
+  const priorApprovedExpenses = approvedOnly(priorExpenses)
+  const priorApprovedDeposits = approvedOnly(priorDeposits)
+
+  for (const meal of priorApprovedMeals) if (meal.date < beforeDate) months.add(meal.date.slice(0, 7))
+  for (const expense of priorApprovedExpenses) if (expense.date < beforeDate) months.add(expense.date.slice(0, 7))
+  for (const deposit of priorApprovedDeposits) if (deposit.date < beforeDate) months.add(deposit.date.slice(0, 7))
 
   for (const monthKey of [...months].sort()) {
     const [year, month] = monthKey.split('-').map(Number)
@@ -134,9 +154,9 @@ export function calculateOpeningBalances(
     const lastDay = new Date(year, month, 0).getDate()
     const end = `${monthKey}-${String(lastDay).padStart(2, '0')}`
 
-    const monthMeals = priorMeals.filter((meal) => meal.date >= start && meal.date <= end)
-    const monthExpenses = priorExpenses.filter((expense) => expense.date >= start && expense.date <= end)
-    const monthDeposits = priorDeposits.filter((deposit) => deposit.date >= start && deposit.date <= end)
+    const monthMeals = priorApprovedMeals.filter((meal) => meal.date >= start && meal.date <= end)
+    const monthExpenses = priorApprovedExpenses.filter((expense) => expense.date >= start && expense.date <= end)
+    const monthDeposits = priorApprovedDeposits.filter((deposit) => deposit.date >= start && deposit.date <= end)
 
     const summary = calculateMonth(members, monthMeals, monthExpenses, monthDeposits, start, end)
     for (const row of summary.rows) {
@@ -157,7 +177,7 @@ export function memberName(member: Member): string {
 }
 
 export function totalMealsForDate(meals: Meal[], date: string): number {
-  return meals
+  return approvedOnly(meals)
     .filter((meal) => meal.date === date)
     .reduce((sum, meal) => sum + Number(meal.count || 0), 0)
 }

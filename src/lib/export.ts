@@ -1,4 +1,4 @@
-import { balanceTone, memberName } from './calc'
+import { approvedOnly, balanceTone, memberName } from './calc'
 import { formatDate, formatMeals, formatMoney, formatMonth } from './format'
 import type { Expense, Member, Mess, MonthSummary } from './types'
 
@@ -64,7 +64,9 @@ export function summaryToCsv(
   if (expenses.length > 0) {
     const memberMap = new Map(members.map((member) => [member.user_id, member]))
     const spending = new Map<string, { bazar: number; other: number }>()
-    for (const expense of expenses) {
+    // শুধু অনুমোদিত খরচই CSV-তে যাবে
+    const approvedExpenses = approvedOnly(expenses)
+    for (const expense of approvedExpenses) {
       const userId = expense.paid_by ?? expense.created_by
       if (!userId) continue
       const totals = spending.get(userId) ?? { bazar: 0, other: 0 }
@@ -106,8 +108,8 @@ export function summaryToCsv(
       formatMoney(spendingRows.reduce((sum, row) => sum + row.total, 0), currency),
     ])
 
-    rows.push([], ['খরচের বিবরণ'], ['তারিখ', 'ধরন', 'বিবরণ', 'কে করেছেন', 'পরিমাণ'])
-    for (const expense of [...expenses].sort(
+    rows.push([], ['খরচের বিবরণ (শুধু অনুমোদিত)'], ['তারিখ', 'ধরন', 'বিবরণ', 'কে করেছেন', 'পরিমাণ'])
+    for (const expense of [...approvedExpenses].sort(
       (a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at),
     )) {
       const userId = expense.paid_by ?? expense.created_by

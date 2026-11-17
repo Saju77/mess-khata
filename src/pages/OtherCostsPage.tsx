@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   CalendarDays,
+  Check,
   Flame,
   Home,
   Pencil,
@@ -9,15 +10,16 @@ import {
   Trash2,
   Wifi,
   Wrench,
+  X,
   Zap,
   Droplets,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
-import { memberName } from '../lib/calc'
+import { entryStatus, memberName } from '../lib/calc'
 import { defaultDateForMonth, formatDate, formatMoney, formatMonth } from '../lib/format'
 import { friendlyError } from '../lib/errors'
-import type { Expense } from '../lib/types'
+import type { EntryStatus, Expense } from '../lib/types'
 import {
   Badge,
   Button,
@@ -50,8 +52,19 @@ function categoryMeta(value: string) {
 }
 
 export function OtherCostsPage() {
-  const { activeMess, members, user, month, monthData, addExpense, updateExpense, deleteExpense } = useApp()
+  const {
+    activeMess,
+    members,
+    user,
+    month,
+    monthData,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+    setEntryStatus,
+  } = useApp()
   const currency = activeMess?.mess.currency || '৳'
+  const isManager = activeMess?.role === 'manager'
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [date, setDate] = useState(defaultDateForMonth(month))
@@ -64,6 +77,7 @@ export function OtherCostsPage() {
   const [error, setError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [acting, setActing] = useState(false)
 
   const other = useMemo(
     () =>
@@ -73,17 +87,62 @@ export function OtherCostsPage() {
     [monthData.expenses],
   )
 
-  const total = other.reduce((sum, expense) => sum + expense.amount, 0)
-  const equalSplitTotal = other.filter((expense) => !expense.include_in_meal_rate).reduce((sum, expense) => sum + expense.amount, 0)
+  // শুধু অনুমোদিত এন্ট্রিই হিসাবে যোগ হয়
+  const approvedOther = useMemo(
+    () => other.filter((expense) => entryStatus(expense) === 'approved'),
+    [other],
+  )
+  const total = approvedOther.reduce((sum, expense) => sum + expense.amount, 0)
+  const equalSplitTotal = approvedOther
+    .filter((expense) => !expense.include_in_meal_rate)
+    .reduce((sum, expense) => sum + expense.amount, 0)
   const includedTotal = total - equalSplitTotal
+
+  const pendingOther = other.filter((expense) => entryStatus(expense) === 'pending')
+  const rejectedOther = other.filter((expense) => entryStatus(expense) === 'rejected')
+  const awaitingDecision = [...pendingOther, ...rejectedOther]
+
+  const handleBatchStatus = async (status: EntryStatus) => {
+    const targets = status === 'approved' ? awaitingDecision : pendingOther
+    if (targets.length === 0) return
+    setActing(true)
+    try {
+      await setEntryStatus(
+        'expense',
+        targets.map((expense) => expense.id),
+        status,
+      )
+      toast.success(
+        status === 'approved'
+          ? `${targets.length} টি খরচ অনুমোদন হয়েছে।`
+          : `${targets.length} টি খরচ বাতিল করা হয়েছে।`,
+      )
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const handleOneStatus = async (expense: Expense, status: EntryStatus) => {
+    setActing(true)
+    try {
+      await setEntryStatus('expense', [expense.id], status)
+      toast.success(status === 'approved' ? 'এন্ট্রি অনুমোদন হয়েছে।' : 'এন্ট্রি বাতিল করা হয়েছে।')
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setActing(false)
+    }
+  }
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>()
-    for (const expense of other) {
+    for (const expense of approvedOther) {
       map.set(expense.category, (map.get(expense.category) ?? 0) + expense.amount)
     }
     return CATEGORIES.map((item) => ({ ...item, total: map.get(item.value) ?? 0 })).filter((item) => item.total > 0)
-  }, [other])
+  }, [approvedOther])
 
   const maxCategory = Math.max(...byCategory.map((item) => item.total), 1)
 
@@ -147,10 +206,14 @@ export function OtherCostsPage() {
       }
       if (editing) {
         await updateExpense(editing.id, input)
-        toast.success('খরচের এন্ট্রি আপডেট হয়েছে।')
+        toast.success(
+          isManager
+            ? 'খরচের এন্ট্রি আপডেট হয়েছে।'
+            : 'আপডেট সেভ হয়েছে — ম্যানেজারের অনুমোদনের অপেক্ষায়।',
+        )
       } else {
         await addExpense(input)
-        toast.success('খরচ যোগ হয়েছে।')
+        toast.success(isManager ? 'খরচ যোগ হয়েছে।' : 'খরচ যোগ হয়েছে — ম্যানেজারের অনুমোদনের অপেক্ষায়।')
       }
       setOpen(false)
     } catch (err) {
@@ -190,10 +253,35 @@ export function OtherCostsPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="মোট অন্যান্য খরচ" value={formatMoney(total, currency)} hint={formatMonth(month)} icon={ReceiptText} tone="blue" />
+        <StatCard label="মোট অন্যান্য খরচ" value={formatMoney(total, currency)} hint={`${formatMonth(month)} · অনুমোদিত`} icon={ReceiptText} tone="blue" />
         <StatCard label="সমান ভাগে" value={formatMoney(equalSplitTotal, currency)} hint="সদস্যদের মধ্যে ভাগ হবে" icon={CalendarDays} tone="amber" />
         <StatCard label="মিল রেটে যোগ" value={formatMoney(includedTotal, currency)} hint="মিল রেটের সাথে যাবে" icon={ReceiptText} tone="teal" className="col-span-2 lg:col-span-1" />
       </div>
+
+      {isManager && awaitingDecision.length > 0 ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium leading-relaxed text-amber-900">
+            ⏳ {pendingOther.length} টি খরচ অনুমোদনের অপেক্ষায়
+            {rejectedOther.length > 0 ? ` · ${rejectedOther.length} টি বাতিল হয়েছে` : ''}
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" icon={Check} loading={acting} onClick={() => handleBatchStatus('approved')}>
+              {awaitingDecision.length} টি অনুমোদন
+            </Button>
+            {pendingOther.length > 0 ? (
+              <Button size="sm" variant="ghost" icon={X} loading={acting} onClick={() => handleBatchStatus('rejected')}>
+                সব বাতিল
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {!isManager && awaitingDecision.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+          ⏳ {pendingOther.length} টি এন্ট্রি ম্যানেজারের অনুমোদনের অপেক্ষায় — অনুমোদন না হওয়া পর্যন্ত হিসাবে যোগ হবে না।
+        </div>
+      ) : null}
 
       <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-[13px] leading-relaxed text-sky-900">
         <strong>হিসাবের নিয়ম:</strong> “মিল রেটে যোগ করুন” টিক না দিলে এই খরচটি মাসের সক্রিয় সদস্যদের মধ্যে সমান ভাগে ভাগ হবে। টিক দিলে খরচটি মিল রেটের সাথে যোগ হবে।
@@ -241,6 +329,8 @@ export function OtherCostsPage() {
           <div className="divide-y divide-slate-100">
             {other.map((expense) => {
               const meta = categoryMeta(expense.category)
+              const status = entryStatus(expense)
+              const needsDecision = status === 'pending' || status === 'rejected'
               return (
                 <div key={expense.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
                   <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
@@ -251,6 +341,8 @@ export function OtherCostsPage() {
                       <p className="truncate text-sm font-medium text-slate-800">{expense.description || meta.label}</p>
                       <Badge tone={meta.tone}>{meta.label}</Badge>
                       {expense.include_in_meal_rate ? <Badge tone="teal">মিল রেটে</Badge> : null}
+                      {status === 'pending' ? <Badge tone="amber">অপেক্ষমাণ</Badge> : null}
+                      {status === 'rejected' ? <Badge tone="rose">বাতিল</Badge> : null}
                     </div>
                     <p className="mt-0.5 text-[11px] text-slate-500">
                       {formatDate(expense.date, true)} · <span className="font-medium text-slate-600">{payerName(expense)}</span>
@@ -258,14 +350,36 @@ export function OtherCostsPage() {
                   </div>
                   <p className="num shrink-0 text-sm font-bold text-slate-800">{formatMoney(expense.amount, currency)}</p>
                   <div className="flex shrink-0 gap-0.5">
+                    {isManager && needsDecision ? (
+                      <>
+                        <IconButton
+                          label="অনুমোদন"
+                          icon={Check}
+                          size="sm"
+                          className="h-8 w-8 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                          disabled={acting}
+                          onClick={() => handleOneStatus(expense, 'approved')}
+                        />
+                        <IconButton
+                          label="বাতিল"
+                          icon={X}
+                          size="sm"
+                          className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                          disabled={acting}
+                          onClick={() => handleOneStatus(expense, 'rejected')}
+                        />
+                      </>
+                    ) : null}
                     <IconButton label="এডিট" icon={Pencil} size="sm" className="h-8 w-8" onClick={() => openEdit(expense)} />
-                    <IconButton
-                      label="ডিলিট"
-                      icon={Trash2}
-                      size="sm"
-                      className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
-                      onClick={() => setDeleteTarget(expense)}
-                    />
+                    {isManager || status !== 'approved' ? (
+                      <IconButton
+                        label="ডিলিট"
+                        icon={Trash2}
+                        size="sm"
+                        className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                        onClick={() => setDeleteTarget(expense)}
+                      />
+                    ) : null}
                   </div>
                 </div>
               )

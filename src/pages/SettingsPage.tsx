@@ -55,9 +55,25 @@ export function SettingsPage() {
     connectCloud,
     disconnectCloud,
     resetDemo,
+    setDemoViewAsMember,
   } = useApp()
   const currency = activeMess?.mess.currency || '৳'
   const isManager = activeMess?.role === 'manager'
+  const viewAsMember = mode === 'demo' && activeMess?.role === 'member'
+
+  const handleViewAsMember = async () => {
+    try {
+      await setDemoViewAsMember(!viewAsMember)
+      toast.success(
+        viewAsMember
+          ? 'আবার ম্যানেজার হিসেবে দেখছেন।'
+          : 'সদস্য হিসেবে দেখছেন — এখন আপনার ইনপুট অনুমোদনের অপেক্ষায় যাবে।',
+      )
+    } catch (err) {
+      toast.error(friendlyError(err))
+    }
+  }
+
   const activeManagerCount = members.filter((member) => !member.left_at && member.role === 'manager').length
   const canLeaveMess = mode !== 'demo' && (!isManager || activeManagerCount > 1)
 
@@ -288,6 +304,31 @@ export function SettingsPage() {
                   ডেমো রিসেট
                 </Button>
               </div>
+              <button
+                type="button"
+                aria-pressed={viewAsMember}
+                onClick={() => void handleViewAsMember()}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-left transition hover:border-slate-300 hover:bg-white"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-slate-800">সদস্য হিসেবে দেখুন</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
+                    চালু করলে সদস্য হিসেবে ইনপুট দেবেন (অনুমোদনের অপেক্ষায় যাবে); বন্ধ করলে ম্যানেজার হয়ে approve/reject করবেন।
+                  </span>
+                </span>
+                <span
+                  aria-hidden
+                  className={`inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition ${
+                    viewAsMember ? 'bg-teal-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`h-5 w-5 rounded-full bg-white shadow transition ${
+                      viewAsMember ? 'translate-x-5' : ''
+                    }`}
+                  />
+                </span>
+              </button>
             </div>
           ) : (
             <div className="space-y-3">

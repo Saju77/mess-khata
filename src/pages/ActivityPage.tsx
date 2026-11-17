@@ -43,6 +43,23 @@ const KIND_LABELS: Record<string, string> = {
   other: 'অন্যান্য খরচ',
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  approved: 'অনুমোদিত',
+  pending: 'অপেক্ষমাণ',
+  rejected: 'বাতিল',
+}
+
+/** শুধু approval অবস্থা বদলালে শিরোনাম সেভাবেই হবে */
+function statusTitle(base: string, to: string): string {
+  if (to === 'approved') return `${base} অনুমোদন করেছেন`
+  if (to === 'rejected') return `${base} বাতিল করেছেন`
+  return `${base} এডিট করে আবার অনুমোদনের অপেক্ষায় পাঠিয়েছেন`
+}
+
+function isStatusOnly(changes: Change[]): boolean {
+  return changes.length === 1 && changes[0].label === 'অনুমোদন'
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   bazar: 'বাজার',
   rent: 'বাড়ি ভাড়া',
@@ -132,9 +149,10 @@ function describeEntry(
     const payer = row.paid_by ?? oldRow.paid_by
 
     if (entry.action === 'insert') {
+      const pending = asString(row.status) === 'pending'
       return {
         title: `${what} যোগ করেছেন`,
-        detail: `${description} · ${amount} · ${formatDate(date, true)}${payer ? ` · ${memberOf(payer)}` : ''}`,
+        detail: `${description} · ${amount} · ${formatDate(date, true)}${payer ? ` · ${memberOf(payer)}` : ''}${pending ? ' · ⏳ অনুমোদনের অপেক্ষায়' : ''}`,
         changes: [],
       }
     }
@@ -145,26 +163,30 @@ function describeEntry(
         changes: [],
       }
     }
+    const changes = buildChanges(oldRow, row, [
+      { key: 'amount', label: 'টাকা', format: money },
+      { key: 'description', label: 'বিবরণ' },
+      { key: 'date', label: 'তারিখ', format: (value) => formatDate(asString(value), true) },
+      { key: 'kind', label: 'ধরন', format: (value) => KIND_LABELS[asString(value)] ?? asString(value) },
+      {
+        key: 'category',
+        label: 'খাত',
+        format: (value) => CATEGORY_LABELS[asString(value)] ?? asString(value),
+      },
+      { key: 'paid_by', label: 'কে করেছেন', format: memberOf },
+      {
+        key: 'include_in_meal_rate',
+        label: 'মিল রেটে',
+        format: (value) => (value ? 'হ্যাঁ' : 'না'),
+      },
+      { key: 'status', label: 'অনুমোদন', format: (value) => STATUS_LABELS[asString(value)] ?? asString(value) },
+    ])
     return {
-      title: `${what} এডিট করেছেন`,
+      title: isStatusOnly(changes)
+        ? statusTitle(what, asString(row.status))
+        : `${what} এডিট করেছেন`,
       detail: `${description} · ${formatDate(date, true)}`,
-      changes: buildChanges(oldRow, row, [
-        { key: 'amount', label: 'টাকা', format: money },
-        { key: 'description', label: 'বিবরণ' },
-        { key: 'date', label: 'তারিখ', format: (value) => formatDate(asString(value), true) },
-        { key: 'kind', label: 'ধরন', format: (value) => KIND_LABELS[asString(value)] ?? asString(value) },
-        {
-          key: 'category',
-          label: 'খাত',
-          format: (value) => CATEGORY_LABELS[asString(value)] ?? asString(value),
-        },
-        { key: 'paid_by', label: 'কে করেছেন', format: memberOf },
-        {
-          key: 'include_in_meal_rate',
-          label: 'মিল রেটে',
-          format: (value) => (value ? 'হ্যাঁ' : 'না'),
-        },
-      ]),
+      changes,
     }
   }
 
@@ -205,9 +227,10 @@ function describeEntry(
     const count = asNumber(row.count || oldRow.count)
 
     if (entry.action === 'insert') {
+      const pending = asString(row.status) === 'pending'
       return {
         title: 'মিল যোগ করেছেন',
-        detail: `${member} · ${formatDate(date, true)} · ${formatMeals(count)} মিল`,
+        detail: `${member} · ${formatDate(date, true)} · ${formatMeals(count)} মিল${pending ? ' · ⏳ অনুমোদনের অপেক্ষায়' : ''}`,
         changes: [],
       }
     }
@@ -218,14 +241,16 @@ function describeEntry(
         changes: [],
       }
     }
+    const changes = buildChanges(oldRow, row, [
+      { key: 'count', label: 'মিল', format: (value) => `${formatMeals(asNumber(value))} মিল` },
+      { key: 'date', label: 'তারিখ', format: (value) => formatDate(asString(value), true) },
+      { key: 'user_id', label: 'সদস্য', format: memberOf },
+      { key: 'status', label: 'অনুমোদন', format: (value) => STATUS_LABELS[asString(value)] ?? asString(value) },
+    ])
     return {
-      title: 'মিল পরিবর্তন করেছেন',
+      title: isStatusOnly(changes) ? statusTitle('মিল', asString(row.status)) : 'মিল পরিবর্তন করেছেন',
       detail: `${member} · ${formatDate(date, true)}`,
-      changes: buildChanges(oldRow, row, [
-        { key: 'count', label: 'মিল', format: (value) => `${formatMeals(asNumber(value))} মিল` },
-        { key: 'date', label: 'তারিখ', format: (value) => formatDate(asString(value), true) },
-        { key: 'user_id', label: 'সদস্য', format: memberOf },
-      ]),
+      changes,
     }
   }
 

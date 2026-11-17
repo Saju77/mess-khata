@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
-import { CalendarDays, Pencil, Plus, ShoppingBasket, Trash2 } from 'lucide-react'
+import { CalendarDays, Check, Pencil, Plus, ShoppingBasket, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
-import { dailyBazarTotals, memberName } from '../lib/calc'
+import { dailyBazarTotals, entryStatus, memberName } from '../lib/calc'
 import { defaultDateForMonth, formatDate, formatMoney, formatMonth } from '../lib/format'
 import { friendlyError } from '../lib/errors'
-import type { Expense } from '../lib/types'
+import type { EntryStatus, Expense } from '../lib/types'
 import {
+  Badge,
   Button,
   ConfirmDialog,
   EmptyState,
@@ -23,8 +24,19 @@ import {
 } from '../components/ui'
 
 export function BazarPage() {
-  const { activeMess, members, user, month, monthData, addExpense, updateExpense, deleteExpense } = useApp()
+  const {
+    activeMess,
+    members,
+    user,
+    month,
+    monthData,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+    setEntryStatus,
+  } = useApp()
   const currency = activeMess?.mess.currency || '৳'
+  const isManager = activeMess?.role === 'manager'
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [date, setDate] = useState(defaultDateForMonth(month))
@@ -35,6 +47,7 @@ export function BazarPage() {
   const [error, setError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [acting, setActing] = useState(false)
 
   const start = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`
   const endDate = new Date(month.getFullYear(), month.getMonth() + 1, 0)
@@ -48,7 +61,49 @@ export function BazarPage() {
     [monthData.expenses],
   )
 
-  const total = bazar.reduce((sum, expense) => sum + expense.amount, 0)
+  // শুধু অনুমোদিত এন্ট্রিই হিসাবে যোগ হয়
+  const total = bazar
+    .filter((expense) => entryStatus(expense) === 'approved')
+    .reduce((sum, expense) => sum + expense.amount, 0)
+  const approvedCount = bazar.filter((expense) => entryStatus(expense) === 'approved').length
+  const pendingBazar = bazar.filter((expense) => entryStatus(expense) === 'pending')
+  const rejectedBazar = bazar.filter((expense) => entryStatus(expense) === 'rejected')
+  const awaitingDecision = [...pendingBazar, ...rejectedBazar]
+
+  const handleBatchStatus = async (status: EntryStatus) => {
+    const targets = status === 'approved' ? awaitingDecision : pendingBazar
+    if (targets.length === 0) return
+    setActing(true)
+    try {
+      await setEntryStatus(
+        'expense',
+        targets.map((expense) => expense.id),
+        status,
+      )
+      toast.success(
+        status === 'approved'
+          ? `${targets.length} টি বাজার অনুমোদন হয়েছে।`
+          : `${targets.length} টি বাজার বাতিল করা হয়েছে।`,
+      )
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const handleOneStatus = async (expense: Expense, status: EntryStatus) => {
+    setActing(true)
+    try {
+      await setEntryStatus('expense', [expense.id], status)
+      toast.success(status === 'approved' ? 'এন্ট্রি অনুমোদন হয়েছে।' : 'এন্ট্রি বাতিল করা হয়েছে।')
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setActing(false)
+    }
+  }
+
   const daily = useMemo(() => dailyBazarTotals(monthData.expenses, start, end), [monthData.expenses, start, end])
   const maxDaily = Math.max(...daily.map((item) => item.total), 1)
 
@@ -118,10 +173,14 @@ export function BazarPage() {
       }
       if (editing) {
         await updateExpense(editing.id, input)
-        toast.success('বাজারের এন্ট্রি আপডেট হয়েছে।')
+        toast.success(
+          isManager
+            ? 'বাজারের এন্ট্রি আপডেট হয়েছে।'
+            : 'আপডেট সেভ হয়েছে — ম্যানেজারের অনুমোদনের অপেক্ষায়।',
+        )
       } else {
         await addExpense(input)
-        toast.success('বাজার যোগ হয়েছে।')
+        toast.success(isManager ? 'বাজার যোগ হয়েছে।' : 'বাজার যোগ হয়েছে — ম্যানেজারের অনুমোদনের অপেক্ষায়।')
       }
       setOpen(false)
     } catch (err) {
@@ -161,8 +220,8 @@ export function BazarPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="এই মাসের বাজার" value={formatMoney(total, currency)} hint={formatMonth(month)} icon={ShoppingBasket} tone="amber" />
-        <StatCard label="মোট এন্ট্রি" value={String(bazar.length)} hint="বাজারের রেকর্ড" icon={CalendarDays} tone="slate" />
+        <StatCard label="এই মাসের বাজার" value={formatMoney(total, currency)} hint={`${formatMonth(month)} · অনুমোদিত`} icon={ShoppingBasket} tone="amber" />
+        <StatCard label="মোট এন্ট্রি" value={String(approvedCount)} hint="অনুমোদিত বাজার" icon={CalendarDays} tone="slate" />
         <StatCard
           label="দৈনিক গড়"
           value={formatMoney(daily.filter((item) => item.total > 0).length ? total / daily.filter((item) => item.total > 0).length : 0, currency)}
@@ -172,6 +231,31 @@ export function BazarPage() {
           className="col-span-2 lg:col-span-1"
         />
       </div>
+
+      {isManager && awaitingDecision.length > 0 ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium leading-relaxed text-amber-900">
+            ⏳ {pendingBazar.length} টি বাজার অনুমোদনের অপেক্ষায়
+            {rejectedBazar.length > 0 ? ` · ${rejectedBazar.length} টি বাতিল হয়েছে` : ''}
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" icon={Check} loading={acting} onClick={() => handleBatchStatus('approved')}>
+              {awaitingDecision.length} টি অনুমোদন
+            </Button>
+            {pendingBazar.length > 0 ? (
+              <Button size="sm" variant="ghost" icon={X} loading={acting} onClick={() => handleBatchStatus('rejected')}>
+                সব বাতিল
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {!isManager && awaitingDecision.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+          ⏳ {pendingBazar.length} টি এন্ট্রি ম্যানেজারের অনুমোদনের অপেক্ষায় — অনুমোদন না হওয়া পর্যন্ত হিসাবে যোগ হবে না।
+        </div>
+      ) : null}
 
       {daily.some((item) => item.total > 0) ? (
         <section className="card mt-4 p-4 sm:p-5">
@@ -217,37 +301,69 @@ export function BazarPage() {
         ) : (
           <div className="divide-y divide-slate-100">
             {grouped.map(([groupDate, items]) => {
-              const dayTotal = items.reduce((sum, item) => sum + item.amount, 0)
+              const dayTotal = items
+                .filter((item) => entryStatus(item) === 'approved')
+                .reduce((sum, item) => sum + item.amount, 0)
               return (
                 <div key={groupDate}>
                   <div className="flex items-center justify-between bg-slate-50/70 px-4 py-2 sm:px-5">
                     <p className="text-xs font-semibold text-slate-500">{formatDate(groupDate)}</p>
                     <p className="num text-xs font-bold text-slate-700">{formatMoney(dayTotal, currency)}</p>
                   </div>
-                  {items.map((expense) => (
-                    <div key={expense.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
-                        <ShoppingBasket className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-800">{expense.description || 'বাজার'}</p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          {formatDate(expense.date, true)} · <span className="font-medium text-slate-600">{payerName(expense)}</span>
-                        </p>
+                  {items.map((expense) => {
+                    const status = entryStatus(expense)
+                    const needsDecision = status === 'pending' || status === 'rejected'
+                    return (
+                      <div key={expense.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                          <ShoppingBasket className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate text-sm font-medium text-slate-800">{expense.description || 'বাজার'}</p>
+                            {status === 'pending' ? <Badge tone="amber">অপেক্ষমাণ</Badge> : null}
+                            {status === 'rejected' ? <Badge tone="rose">বাতিল</Badge> : null}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {formatDate(expense.date, true)} · <span className="font-medium text-slate-600">{payerName(expense)}</span>
+                          </p>
+                        </div>
+                        <p className="num shrink-0 text-sm font-bold text-slate-800">{formatMoney(expense.amount, currency)}</p>
+                        <div className="flex shrink-0 gap-0.5">
+                          {isManager && needsDecision ? (
+                            <>
+                              <IconButton
+                                label="অনুমোদন"
+                                icon={Check}
+                                size="sm"
+                                className="h-8 w-8 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                                disabled={acting}
+                                onClick={() => handleOneStatus(expense, 'approved')}
+                              />
+                              <IconButton
+                                label="বাতিল"
+                                icon={X}
+                                size="sm"
+                                className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                                disabled={acting}
+                                onClick={() => handleOneStatus(expense, 'rejected')}
+                              />
+                            </>
+                          ) : null}
+                          <IconButton label="এডিট" icon={Pencil} size="sm" className="h-8 w-8" onClick={() => openEdit(expense)} />
+                          {isManager || status !== 'approved' ? (
+                            <IconButton
+                              label="ডিলিট"
+                              icon={Trash2}
+                              size="sm"
+                              className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                              onClick={() => setDeleteTarget(expense)}
+                            />
+                          ) : null}
+                        </div>
                       </div>
-                      <p className="num shrink-0 text-sm font-bold text-slate-800">{formatMoney(expense.amount, currency)}</p>
-                      <div className="flex shrink-0 gap-0.5">
-                        <IconButton label="এডিট" icon={Pencil} size="sm" className="h-8 w-8" onClick={() => openEdit(expense)} />
-                        <IconButton
-                          label="ডিলিট"
-                          icon={Trash2}
-                          size="sm"
-                          className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
-                          onClick={() => setDeleteTarget(expense)}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )
             })}

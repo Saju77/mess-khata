@@ -12,6 +12,7 @@ import type {
   ActivityLogEntry,
   Deposit,
   DepositInput,
+  EntryStatus,
   Expense,
   ExpenseInput,
   Meal,
@@ -112,6 +113,7 @@ function seedMonth(db: DemoDb, monthDate: Date, throughDay: number) {
           date: dateIso,
           count,
           note: null,
+          status: 'approved',
           created_by: DEMO_USER_ID,
           created_at: date.toISOString(),
         })
@@ -129,6 +131,7 @@ function seedMonth(db: DemoDb, monthDate: Date, throughDay: number) {
         category: 'bazar',
         description: BUYERS[index % BUYERS.length],
         include_in_meal_rate: true,
+        status: 'approved',
         paid_by: profiles[index % profiles.length].id,
         created_by: DEMO_USER_ID,
         created_at: date.toISOString(),
@@ -156,6 +159,7 @@ function seedMonth(db: DemoDb, monthDate: Date, throughDay: number) {
         category: item.category,
         description: item.description,
         include_in_meal_rate: false,
+        status: 'approved',
         paid_by: profiles[itemIndex % profiles.length].id,
         created_by: DEMO_USER_ID,
         created_at: start.toISOString(),
@@ -302,8 +306,14 @@ function readDb(): DemoDb {
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb
       if (parsed?.mess?.id && Array.isArray(parsed.meals)) {
+        // পুরনো demo ডেটায় status/ paid_by না থাকলে যোগ হবে
+        parsed.meals = (parsed.meals ?? []).map((meal) => ({
+          ...meal,
+          status: meal.status ?? 'approved',
+        }))
         parsed.expenses = (parsed.expenses ?? []).map((expense) => ({
           ...expense,
+          status: expense.status ?? 'approved',
           paid_by: expense.paid_by ?? expense.created_by ?? null,
         }))
         if (!Array.isArray(parsed.activity)) {
@@ -347,6 +357,25 @@ export function createDemoApi(): Api {
     const me = db.members.find((member) => member.user_id === DEMO_USER_ID)
     if (db.mess.id !== messId || me?.role !== 'manager' || me.left_at) {
       throw new Error('not manager')
+    }
+  }
+
+  /** বর্তমান demo ব্যবহারকারী ম্যানেজার কিনা ("সদস্য হিসেবে দেখুন" টগলসহ) */
+  function actorIsManager(): boolean {
+    db = readDb()
+    const me = db.members.find((member) => member.user_id === DEMO_USER_ID)
+    return me?.role === 'manager' && !me.left_at
+  }
+
+  /** approval status — ম্যানেজার লিখলে সরাসরি approved, সদস্য লিখলে pending */
+  function statusForActor(): EntryStatus {
+    return actorIsManager() ? 'approved' : 'pending'
+  }
+
+  /** সদস্য approved (final) এন্ট্রি মুড়তে পারবে না — ম্যানেজার মুড়তে পারবেন */
+  function guardDeleteApproved(row: { status?: EntryStatus }) {
+    if ((row.status ?? 'approved') === 'approved' && !actorIsManager()) {
+      throw new Error('অনুমোদিত এন্ট্রি সদস্য মুছতে পারবেন না।')
     }
   }
 
@@ -490,6 +519,7 @@ export function createDemoApi(): Api {
     },
 
     async removeMember(messId, targetUserId) {
+      requireManager(messId)
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
       const membership = db.members.find((item) => item.user_id === targetUserId)
       if (!membership) throw new Error('সদস্য পাওয়া যায়নি।')
@@ -507,6 +537,7 @@ export function createDemoApi(): Api {
     },
 
     async updateMemberJoinDate(messId, userId, joinedAt) {
+      requireManager(messId)
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
       const membership = db.members.find((item) => item.user_id === userId)
       if (!membership) throw new Error('সদস্য পাওয়া যায়নি।')
@@ -523,6 +554,7 @@ export function createDemoApi(): Api {
     },
 
     async setMemberRole(messId, userId, role) {
+      requireManager(messId)
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
       if (role !== 'manager' && role !== 'member') throw new Error('invalid role')
       const target = db.members.find((m) => m.user_id === userId && !m.left_at)
@@ -576,20 +608,39 @@ export function createDemoApi(): Api {
 
     async saveMeals(messId, date, entries: MealEntry[]) {
       if (db.mess.id !== messId) throw new Error('মেস পাওয়া যায়নি।')
+      const isManager = actorIsManager()
       for (const entry of entries) {
         const index = db.meals.findIndex(
           (meal) => meal.mess_id === messId && meal.user_id === entry.userId && meal.date === date,
         )
         if (Number(entry.count) <= 0) {
           if (index >= 0) {
-            const [removed] = db.meals.splice(index, 1)
-            if (removed) {
-              logActivity({
-                action: 'delete',
-                entity: 'meal',
-                entity_id: removed.id,
-                old_data: { ...removed } as unknown as Record<string, unknown>,
-              })
+            const row = db.meals[index]
+            const rowApproved = (row.status ?? 'approved') === 'approved'
+            if (rowApproved && !isManager) {
+              // সদস্য approved মিল মুড়তে পারবে না — ০ করলে pending হয়ে যাবে (হিসাব থেকে বাদ)
+              if (Number(row.count) !== 0 || row.status !== 'pending') {
+                const before = { ...row }
+                row.count = 0
+                row.status = 'pending'
+                logActivity({
+                  action: 'update',
+                  entity: 'meal',
+                  entity_id: row.id,
+                  data: { ...row } as unknown as Record<string, unknown>,
+                  old_data: before as unknown as Record<string, unknown>,
+                })
+              }
+            } else {
+              const [removed] = db.meals.splice(index, 1)
+              if (removed) {
+                logActivity({
+                  action: 'delete',
+                  entity: 'meal',
+                  entity_id: removed.id,
+                  old_data: { ...removed } as unknown as Record<string, unknown>,
+                })
+              }
             }
           }
           continue
@@ -597,7 +648,9 @@ export function createDemoApi(): Api {
         if (index >= 0) {
           const previous = db.meals[index]
           if (Number(previous.count) !== Number(entry.count)) {
-            const next = { ...previous, count: Number(entry.count) }
+            const next: Meal = { ...previous, count: Number(entry.count) }
+            // সদস্য এডিট করলে (approved/rejected হলেও) এন্ট্রি আবার pending
+            if (!isManager) next.status = 'pending'
             db.meals[index] = next
             logActivity({
               action: 'update',
@@ -615,6 +668,7 @@ export function createDemoApi(): Api {
             date,
             count: Number(entry.count),
             note: null,
+            status: statusForActor(),
             created_by: DEMO_USER_ID,
             created_at: new Date().toISOString(),
           }
@@ -640,6 +694,7 @@ export function createDemoApi(): Api {
         category: input.category,
         description: input.description.trim(),
         include_in_meal_rate: input.include_in_meal_rate,
+        status: statusForActor(),
         paid_by: input.paid_by || DEMO_USER_ID,
         created_by: DEMO_USER_ID,
         created_at: new Date().toISOString(),
@@ -658,7 +713,8 @@ export function createDemoApi(): Api {
       const expense = db.expenses.find((item) => item.id === id && item.mess_id === messId)
       if (!expense) throw new Error('খরচ পাওয়া যায়নি।')
       const before = { ...expense }
-      Object.assign(expense, {
+      const next: Expense = {
+        ...expense,
         date: input.date,
         amount: Number(input.amount),
         kind: input.kind,
@@ -666,7 +722,13 @@ export function createDemoApi(): Api {
         description: input.description.trim(),
         include_in_meal_rate: input.include_in_meal_rate,
         paid_by: input.paid_by || expense.paid_by || DEMO_USER_ID,
-      })
+      }
+      const contentChanged = (
+        ['date', 'amount', 'kind', 'category', 'description', 'include_in_meal_rate', 'paid_by'] as const
+      ).some((key) => before[key] !== next[key])
+      // সদস্য content এডিট করলে (approved হলেও) এন্ট্রি আবার pending
+      if (contentChanged && !actorIsManager()) next.status = 'pending'
+      Object.assign(expense, next)
       logActivity({
         action: 'update',
         entity: 'expense',
@@ -679,6 +741,7 @@ export function createDemoApi(): Api {
 
     async deleteExpense(id, messId) {
       const removed = db.expenses.find((item) => item.id === id && item.mess_id === messId)
+      if (removed) guardDeleteApproved(removed)
       db.expenses = db.expenses.filter((item) => !(item.id === id && item.mess_id === messId))
       if (removed) {
         logActivity({
@@ -688,6 +751,36 @@ export function createDemoApi(): Api {
           old_data: { ...removed } as unknown as Record<string, unknown>,
         })
       }
+      persist()
+    },
+
+    async setEntryStatus(messId, entity, ids, status) {
+      requireManager(messId)
+      const list: (Meal | Expense)[] = entity === 'meal' ? db.meals : db.expenses
+      for (const id of ids) {
+        const row = list.find((item) => item.id === id)
+        if (!row || row.status === status) continue
+        const before = { ...row }
+        row.status = status
+        logActivity({
+          action: 'update',
+          entity,
+          entity_id: id,
+          data: { ...row } as unknown as Record<string, unknown>,
+          old_data: before as unknown as Record<string, unknown>,
+        })
+      }
+      persist()
+    },
+
+    async setDemoViewAsMember(enabled) {
+      db = readDb()
+      const me = db.members.find((member) => member.user_id === DEMO_USER_ID)
+      if (!me) return
+      const next = enabled ? 'member' : 'manager'
+      if (me.role === next) return
+      // ডেমো টেস্টিংয়ের টগল — সাধারণ সদস্য/ম্যানেজার বদল (শেষ ম্যানেজার নিয়ম প্রযোজ্য নয়)
+      me.role = next
       persist()
     },
 

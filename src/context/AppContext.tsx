@@ -28,6 +28,7 @@ import { monthRange } from '../lib/format'
 import type {
   ActivityLogEntry,
   DepositInput,
+  EntryStatus,
   ExpenseInput,
   MealEntry,
   Member,
@@ -76,6 +77,8 @@ interface AppContextValue {
   removeMember: (userId: string) => Promise<void>
   updateMemberJoinDate: (userId: string, joinedAt: string) => Promise<void>
   setMemberRole: (userId: string, role: import('../lib/types').Role) => Promise<void>
+  setEntryStatus: (entity: 'meal' | 'expense', ids: string[], status: EntryStatus) => Promise<void>
+  setDemoViewAsMember: (enabled: boolean) => Promise<void>
 
   saveMeals: (date: string, entries: MealEntry[]) => Promise<void>
   addExpense: (input: ExpenseInput) => Promise<void>
@@ -430,6 +433,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [api, activeMessId, refresh],
   )
 
+  const setEntryStatus = useCallback(
+    async (entity: 'meal' | 'expense', ids: string[], status: EntryStatus) => {
+      if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
+      if (ids.length === 0) return
+      await api.setEntryStatus(activeMessId, entity, ids, status)
+      refresh()
+    },
+    [api, activeMessId, refresh],
+  )
+
+  const setDemoViewAsMember = useCallback(
+    async (enabled: boolean) => {
+      if (!api) throw new Error('অ্যাপ এখনো প্রস্তুত নয়।')
+      await api.setDemoViewAsMember(enabled)
+      refresh()
+    },
+    [api, refresh],
+  )
+
   const saveMeals = useCallback(
     async (date: string, entries: MealEntry[]) => {
       if (!api || !activeMessId) throw new Error('মেস পাওয়া যায়নি।')
@@ -549,6 +571,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removeMember,
       updateMemberJoinDate,
       setMemberRole,
+      setEntryStatus,
+      setDemoViewAsMember,
       saveMeals,
       addExpense,
       updateExpense,
@@ -595,6 +619,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removeMember,
       updateMemberJoinDate,
       setMemberRole,
+      setEntryStatus,
+      setDemoViewAsMember,
       saveMeals,
       addExpense,
       updateExpense,

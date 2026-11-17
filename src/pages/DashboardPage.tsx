@@ -1,17 +1,21 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { isSameMonth } from 'date-fns'
 import {
   ArrowRight,
   Calculator,
   CalendarDays,
+  Check,
+  Clock3,
   ReceiptText,
   ShoppingBasket,
   UtensilsCrossed,
   Wallet,
+  X,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
-import { balanceTone, calculateMonth, memberName, totalMealsForDate } from '../lib/calc'
+import { balanceTone, calculateMonth, entryStatus, memberName, totalMealsForDate } from '../lib/calc'
 import {
   formatDate,
   formatMeals,
@@ -19,13 +23,27 @@ import {
   formatMonth,
   todayISO,
 } from '../lib/format'
-import { Avatar, Badge, Button, EmptyState, MonthPicker, PageHeader, SectionTitle, StatCard } from '../components/ui'
+import { friendlyError } from '../lib/errors'
+import type { EntryStatus } from '../lib/types'
+import {
+  Avatar,
+  Badge,
+  Button,
+  EmptyState,
+  IconButton,
+  MonthPicker,
+  PageHeader,
+  SectionTitle,
+  StatCard,
+} from '../components/ui'
 
 export function DashboardPage() {
-  const { activeMess, members, month, monthData, dataLoading, user } = useApp()
+  const { activeMess, members, month, monthData, dataLoading, user, setEntryStatus } = useApp()
   const navigate = useNavigate()
+  const [acting, setActing] = useState(false)
 
   const currency = activeMess?.mess.currency || '৳'
+  const isManager = activeMess?.role === 'manager'
   const start = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`
   const endDate = new Date(month.getFullYear(), month.getMonth() + 1, 0)
   const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
@@ -37,7 +55,36 @@ export function DashboardPage() {
 
   const currentMonth = isSameMonth(month, new Date())
   const todayMeals = totalMealsForDate(monthData.meals, todayISO())
-  const eatingToday = monthData.meals.filter((meal) => meal.date === todayISO() && meal.count > 0).length
+  const eatingToday = monthData.meals.filter(
+    (meal) => meal.date === todayISO() && meal.count > 0 && entryStatus(meal) === 'approved',
+  ).length
+
+  // approval: অনুমোদনের অপেক্ষায় থাকা ইনপুট
+  const pendingMeals = monthData.meals.filter(
+    (meal) => entryStatus(meal) === 'pending' && Number(meal.count) > 0,
+  )
+  const pendingExpenses = monthData.expenses.filter((expense) => entryStatus(expense) === 'pending')
+  const myPendingCount =
+    !isManager && user
+      ? pendingMeals.filter((meal) => meal.user_id === user.id).length +
+        pendingExpenses.filter((expense) => expense.created_by === user.id).length
+      : 0
+
+  const handleDecision = async (
+    entity: 'meal' | 'expense',
+    id: string,
+    status: EntryStatus,
+  ) => {
+    setActing(true)
+    try {
+      await setEntryStatus(entity, [id], status)
+      toast.success(status === 'approved' ? 'অনুমোদন হয়েছে।' : 'বাতিল করা হয়েছে।')
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setActing(false)
+    }
+  }
   const quickEntries = [
     { label: 'মিল', icon: UtensilsCrossed, to: '/meals', tone: 'bg-teal-50 text-teal-700' },
     { label: 'বাজার', icon: ShoppingBasket, to: '/bazar', tone: 'bg-amber-50 text-amber-700' },
@@ -58,6 +105,7 @@ export function DashboardPage() {
         amount: expense.amount,
         kind: expense.kind,
         byName: payer ? memberName(payer) : null,
+        status: entryStatus(expense),
       }
     })
     const deposits = monthData.deposits.map((deposit) => {
@@ -71,6 +119,7 @@ export function DashboardPage() {
         amount: deposit.amount,
         kind: 'deposit' as const,
         byName: null,
+        status: null,
       }
     })
     return [...expenses, ...deposits]
@@ -152,6 +201,99 @@ export function DashboardPage() {
               tone={summary.fundBalance < 0 ? 'rose' : 'emerald'}
             />
           </div>
+
+          {isManager && pendingMeals.length + pendingExpenses.length > 0 ? (
+            <section className="card mt-4 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 border-b border-amber-100 bg-amber-50/70 px-4 py-3.5 sm:px-5">
+                <div>
+                  <h2 className="flex items-center gap-1.5 text-base font-semibold text-amber-900">
+                    <Clock3 className="h-4 w-4" /> ⏳ {pendingMeals.length + pendingExpenses.length} টি ইনপুট অনুমোদনের অপেক্ষায়
+                  </h2>
+                  <p className="mt-0.5 text-xs text-amber-700">
+                    অনুমোদন না করলে এগুলো কোনো হিসাবে যোগ হবে না
+                  </p>
+                </div>
+              </div>
+              <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto">
+                {pendingMeals.map((meal) => {
+                  const member = members.find((item) => item.user_id === meal.user_id)
+                  return (
+                    <div key={`meal-${meal.id}`} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                        <UtensilsCrossed className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-800">
+                          {member ? memberName(member) : 'সদস্য'} — {formatMeals(meal.count)} মিল
+                        </p>
+                        <p className="text-[11px] text-slate-500">{formatDate(meal.date, true)}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-0.5">
+                        <IconButton
+                          label="অনুমোদন"
+                          icon={Check}
+                          size="sm"
+                          className="h-8 w-8 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                          disabled={acting}
+                          onClick={() => handleDecision('meal', meal.id, 'approved')}
+                        />
+                        <IconButton
+                          label="বাতিল"
+                          icon={X}
+                          size="sm"
+                          className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                          disabled={acting}
+                          onClick={() => handleDecision('meal', meal.id, 'rejected')}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+                {pendingExpenses.map((expense) => (
+                  <div key={`expense-${expense.id}`} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                    <span
+                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        expense.kind === 'bazar' ? 'bg-amber-50 text-amber-700' : 'bg-sky-50 text-sky-700'
+                      }`}
+                    >
+                      {expense.kind === 'bazar' ? <ShoppingBasket className="h-4 w-4" /> : <ReceiptText className="h-4 w-4" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800">
+                        {expense.description || (expense.kind === 'bazar' ? 'বাজার' : 'অন্যান্য খরচ')} ·{' '}
+                        <span className="num">{formatMoney(expense.amount, currency)}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500">{formatDate(expense.date, true)}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-0.5">
+                      <IconButton
+                        label="অনুমোদন"
+                        icon={Check}
+                        size="sm"
+                        className="h-8 w-8 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                        disabled={acting}
+                        onClick={() => handleDecision('expense', expense.id, 'approved')}
+                      />
+                      <IconButton
+                        label="বাতিল"
+                        icon={X}
+                        size="sm"
+                        className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                        disabled={acting}
+                        onClick={() => handleDecision('expense', expense.id, 'rejected')}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {!isManager && myPendingCount > 0 ? (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+              ⏳ আপনার {myPendingCount} টি ইনপুট ম্যানেজারের অনুমোদনের অপেক্ষায় — অনুমোদন না হওয়া পর্যন্ত হিসাবে যোগ হবে না।
+            </div>
+          ) : null}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <section className="card lg:col-span-2">
@@ -271,7 +413,15 @@ export function DashboardPage() {
                       {item.type === 'deposit' ? <Wallet className="h-4 w-4" /> : item.kind === 'bazar' ? <ShoppingBasket className="h-4 w-4" /> : <ReceiptText className="h-4 w-4" />}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
+                        {item.type === 'expense' && item.status === 'pending' ? (
+                          <Badge tone="amber">অপেক্ষমাণ</Badge>
+                        ) : null}
+                        {item.type === 'expense' && item.status === 'rejected' ? (
+                          <Badge tone="rose">বাতিল</Badge>
+                        ) : null}
+                      </div>
                       <p className="mt-0.5 text-[11px] text-slate-500">
                         {formatDate(item.date, true)}
                         {item.byName ? ` · ${item.byName}` : ''}
