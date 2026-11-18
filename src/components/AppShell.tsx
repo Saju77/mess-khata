@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Calculator,
@@ -19,8 +19,12 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApp } from '../context/AppContext'
+import { entryStatus } from '../lib/calc'
 import { friendlyError } from '../lib/errors'
+import { monthKey } from '../lib/format'
 import { Avatar, Badge, Button, ConfirmDialog, Modal, cn } from './ui'
+
+const APP_TITLE = 'মেস খাতা — মেসের হিসাব সহজে'
 
 const NAV = [
   { to: '/', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, end: true },
@@ -101,46 +105,146 @@ function MessSwitcher({ dark = false }: { dark?: boolean }) {
   )
 }
 
-function NavLinks({ onNavigate, dark = false }: { onNavigate?: () => void; dark?: boolean }) {
+function PendingPill({
+  count,
+  dark = false,
+}: {
+  count: number
+  dark?: boolean
+}) {
+  if (count <= 0) return null
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums',
+        dark ? 'bg-amber-400 text-amber-950' : 'bg-amber-500 text-white',
+      )}
+      aria-label={`${count} টি অপেক্ষমাণ`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
+function NavLinks({
+  onNavigate,
+  dark = false,
+  badges = {},
+}: {
+  onNavigate?: () => void
+  dark?: boolean
+  badges?: Record<string, number>
+}) {
   const { activeMess } = useApp()
   const items =
     activeMess?.role === 'manager' ? NAV : NAV.filter((item) => !MANAGER_ONLY_PATHS.has(item.to))
   return (
     <nav className="space-y-1">
-      {items.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.end}
-          onClick={onNavigate}
-          className={({ isActive }) =>
-            cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
-              dark
-                ? isActive
-                  ? 'bg-white/10 text-white'
-                  : 'text-teal-100/70 hover:bg-white/5 hover:text-white'
-                : isActive
-                  ? 'bg-teal-50 text-teal-800'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-            )
-          }
-        >
-          <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
-          {item.label}
-        </NavLink>
-      ))}
+      {items.map((item) => {
+        const count = badges[item.to] ?? 0
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
+                dark
+                  ? isActive
+                    ? 'bg-white/10 text-white'
+                    : 'text-teal-100/70 hover:bg-white/5 hover:text-white'
+                  : isActive
+                    ? 'bg-teal-50 text-teal-800'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+              )
+            }
+          >
+            <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+            <span className="flex-1 truncate">{item.label}</span>
+            <PendingPill count={count} dark={dark} />
+          </NavLink>
+        )
+      })}
     </nav>
   )
 }
 
 export function AppShell() {
-  const { activeMess, user, mode, signOut, resetDemo, error, setError } = useApp()
+  const {
+    activeMess,
+    user,
+    mode,
+    signOut,
+    resetDemo,
+    error,
+    setError,
+    month,
+    monthData,
+    dataLoading,
+  } = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+
+  const isManager = activeMess?.role === 'manager'
+  const pendingMeals = monthData.meals.filter(
+    (meal) => entryStatus(meal) === 'pending' && Number(meal.count) > 0,
+  ).length
+  const pendingBazar = monthData.expenses.filter(
+    (expense) => entryStatus(expense) === 'pending' && expense.kind === 'bazar',
+  ).length
+  const pendingOther = monthData.expenses.filter(
+    (expense) => entryStatus(expense) === 'pending' && expense.kind === 'other',
+  ).length
+  const pendingTotal = pendingMeals + pendingBazar + pendingOther
+
+  const monthStamp = monthKey(month)
+  const knownMonth = useRef(monthStamp)
+  const knownPending = useRef<Set<string> | null>(null)
+  const needsBaseline = useRef(true)
+
+  // নতুন pending ইনপুট এলে manager-কে একবার toast দেখাই (প্রথম লোডে নয়)
+  useEffect(() => {
+    if (knownMonth.current !== monthStamp) {
+      knownMonth.current = monthStamp
+      needsBaseline.current = true
+      return
+    }
+    if (dataLoading) return
+    const current = new Set<string>()
+    for (const meal of monthData.meals) {
+      if (entryStatus(meal) === 'pending' && Number(meal.count) > 0) current.add(`meal:${meal.id}`)
+    }
+    for (const expense of monthData.expenses) {
+      if (entryStatus(expense) === 'pending') current.add(`expense:${expense.id}`)
+    }
+    if (needsBaseline.current) {
+      needsBaseline.current = false
+      knownPending.current = current
+      return
+    }
+    const previous = knownPending.current
+    if (isManager && previous) {
+      let added = 0
+      for (const id of current) if (!previous.has(id)) added += 1
+      if (added > 0) {
+        toast.info(`${added} টি নতুন ইনপুট অনুমোদনের অপেক্ষায়`, {
+          description: 'ড্যাশবোর্ড থেকে দেখে অনুমোদন করুন।',
+        })
+      }
+    }
+    knownPending.current = current
+  }, [dataLoading, isManager, monthData, monthStamp])
+
+  useEffect(() => {
+    document.title = isManager && pendingTotal > 0 ? `(${pendingTotal}) ${APP_TITLE}` : APP_TITLE
+  }, [isManager, pendingTotal])
+
+  useEffect(() => () => { document.title = APP_TITLE }, [])
 
   useEffect(() => {
     setMenuOpen(false)
@@ -148,6 +252,10 @@ export function AppShell() {
   }, [location.pathname])
 
   if (!activeMess || !user) return null
+
+  const badges: Record<string, number> = isManager
+    ? { '/': pendingTotal, '/meals': pendingMeals, '/bazar': pendingBazar, '/other': pendingOther }
+    : {}
 
   const handleSignOut = async () => {
     try {
@@ -187,7 +295,7 @@ export function AppShell() {
         </div>
         <div className="mt-6 flex-1 overflow-y-auto scroll-thin">
           <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-200/40">মেনু</p>
-          <NavLinks dark />
+          <NavLinks dark badges={badges} />
         </div>
         <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="flex items-center gap-2.5">
@@ -270,22 +378,35 @@ export function AppShell() {
 
         <nav className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg lg:hidden">
           <div className="grid grid-cols-5">
-            {MOBILE_NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    'flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition',
-                    isActive ? 'text-teal-700' : 'text-slate-400 hover:text-slate-600',
-                  )
-                }
-              >
-                <item.icon className="h-5 w-5" aria-hidden />
-                {item.label}
-              </NavLink>
-            ))}
+            {MOBILE_NAV.map((item) => {
+              const count = badges[item.to] ?? 0
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition',
+                      isActive ? 'text-teal-700' : 'text-slate-400 hover:text-slate-600',
+                    )
+                  }
+                >
+                  <span className="relative">
+                    <item.icon className="h-5 w-5" aria-hidden />
+                    {count > 0 ? (
+                      <span
+                        className="absolute -right-2.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-none text-white"
+                        aria-label={`${count} টি অপেক্ষমাণ`}
+                      >
+                        {count > 99 ? '99+' : count}
+                      </span>
+                    ) : null}
+                  </span>
+                  {item.label}
+                </NavLink>
+              )
+            })}
           </div>
         </nav>
       </div>
@@ -293,7 +414,7 @@ export function AppShell() {
       <Modal open={menuOpen} onClose={() => setMenuOpen(false)} title="মেনু" size="sm">
         <div className="space-y-5">
           <MessSwitcher />
-          <NavLinks onNavigate={() => setMenuOpen(false)} />
+          <NavLinks onNavigate={() => setMenuOpen(false)} badges={badges} />
           <div className="border-t border-slate-100 pt-4">
             <div className="flex items-center gap-3">
               <Avatar name={user.name} />
